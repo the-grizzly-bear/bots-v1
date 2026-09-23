@@ -224,7 +224,13 @@ def is_pass(reply: str) -> bool:
     return stripped == PASS_WORD or len(stripped) == 0
 
 
-SYNTHESIS_PERSONA_KEY = "scribe"  # Luna - already the "cut to the bottom line" persona
+SYNTHESIS_SYSTEM_PROMPT = (
+    "You are a neutral summarizer. Terse, objective, no personality, no "
+    "opinion of your own - just distill. Ablation-tested: an unvoiced, "
+    "personality-free summary stays more faithful to the actual discussion "
+    "than one filtered through a persona's voice, which tends to drift "
+    "toward reframing or editorializing instead of reporting."
+)
 SYNTHESIS_NOTE = (
     "\n\nThe discussion above covered some ground, possibly including "
     "disagreement between people. Distill it into a short bulleted wrap-up - "
@@ -239,14 +245,24 @@ SYNTHESIS_NOTE = (
 
 async def maybe_synthesize(transcript_lines: list, typing_channel: discord.TextChannel):
     """Natural conclusion instead of a hard turn cap: once a discussion has
-    actually happened, let the scribe persona close it out with a bulleted
-    wrap-up - or skip entirely if there's nothing to distill."""
+    actually happened, close it out with a neutral bulleted wrap-up - or skip
+    entirely if there's nothing to distill. Deliberately NOT voiced through a
+    persona (ablation-tested: personality injection drifts away from
+    faithfully reporting what was actually said)."""
     transcript = "\n".join(transcript_lines) + SYNTHESIS_NOTE
-    reply = await get_reply(SYNTHESIS_PERSONA_KEY, transcript)
+    try:
+        reply = await chat(SYNTHESIS_SYSTEM_PROMPT, transcript)
+    except Exception as e:
+        print(f"[synthesize] failed: {e!r}", flush=True)
+        return
+    reply = clean_reply(reply)
     if is_pass(reply):
         print("[synthesize] nothing to wrap up", flush=True)
         return
-    await post_reply(SYNTHESIS_PERSONA_KEY, reply)
+    try:
+        await typing_channel.send(reply)
+    except Exception as e:
+        print(f"[synthesize] failed to post: {e!r}", flush=True)
 
 
 ESCALATION_SYSTEM_PROMPT = (
