@@ -46,3 +46,29 @@ def recent_context(limit: int = RECENT_LIMIT) -> str:
         return ""
     lines = [f"#{channel}: {summary}" for channel, summary in reversed(rows)]
     return "--- recently covered, don't react fresh to these again ---\n" + "\n".join(lines)
+
+
+def init_meta_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+    conn.commit()
+    return conn
+
+
+_meta_conn = init_meta_db()
+
+
+def seconds_since_last_ping() -> float:
+    row = _meta_conn.execute("SELECT value FROM meta WHERE key = 'last_ping_ts'").fetchone()
+    if not row:
+        return float("inf")
+    return time.time() - float(row[0])
+
+
+def record_ping():
+    _meta_conn.execute(
+        "INSERT INTO meta (key, value) VALUES ('last_ping_ts', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (str(time.time()),),
+    )
+    _meta_conn.commit()

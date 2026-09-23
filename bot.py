@@ -10,7 +10,7 @@ import discord
 from personas import PERSONAS
 from ollama_chat import chat
 from poster import post_to_webhook
-from memory import remember, recent_context
+from memory import remember, recent_context, seconds_since_last_ping, record_ping
 
 DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 INTERACTIVE_CHANNEL_ID = int(os.environ["INTERACTIVE_CHANNEL_ID"])
@@ -232,20 +232,31 @@ ESCALATION_SYSTEM_PROMPT = (
 ESCALATION_PROMPT_TEMPLATE = (
     "Your group of personas just had this discussion reacting to something:\n\n"
     "{transcript}\n\n"
-    "Based on the ENTIRE discussion (not any single reply), should the user be "
-    "personally pinged about this right now? Most things do not warrant it - "
-    "only escalate for something genuinely important, urgent, or high-value.\n\n"
+    "Judge ONLY the real-world importance of the underlying content - never "
+    "how much discussion or disagreement it generated. A heated debate over "
+    "a trivial detail (a typo, a doc wording change, routine maintenance) is "
+    "NOT a reason to escalate. Only escalate for something genuinely urgent "
+    "or high-stakes: an active exploit, a major breach, something requiring "
+    "action soon. When in doubt, don't escalate - the user can always ask.\n\n"
     "Reply with exactly 'NO' if not worth pinging, or 'YES: <BLUF/TL;DR - the "
     "bottom line first, one tight sentence, no preamble, no hedging, just the "
     "single most important fact and why it matters right now>' if it is."
 )
+ESCALATION_COOLDOWN_SECONDS = 600  # don't ping more than once per ~10 minutes
+ESCALATION_PERSONA_KEY = "analyst"  # ping goes out in this persona's voice
 
 
 async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextChannel):
     """One consolidated judgment call over the WHOLE discussion, made after
     everyone's reacted - not left to any single persona to decide on its own
-    mid-reaction, which was pinging way too eagerly and too often."""
+    mid-reaction, which was pinging way too eagerly and too often. Also
+    cooldown-limited so a burst of separate stories can't fire off several
+    pings back to back, and delivered through a persona's own voice/webhook
+    rather than the bare bot account."""
     if not DISCORD_USER_ID or len(transcript_lines) <= 1:
+        return
+    if seconds_since_last_ping() < ESCALATION_COOLDOWN_SECONDS:
+        print("[escalate] skipped, still in cooldown", flush=True)
         return
     try:
         verdict = await chat(ESCALATION_SYSTEM_PROMPT, ESCALATION_PROMPT_TEMPLATE.format(transcript="\n".join(transcript_lines)))
@@ -257,11 +268,12 @@ async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextCha
         print(f"[escalate] no ping warranted: {verdict!r}", flush=True)
         return
     reason = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
-    print(f"[escalate] pinging user: {reason}", flush=True)
-    try:
-        await typing_channel.send(f"<@{DISCORD_USER_ID}> {reason}")
-    except Exception as e:
-        print(f"[escalate] failed to send ping: {e!r}", flush=True)
+    print(f"[escalate] pinging user via {ESCALATION_PERSONA_KEY}: {reason}", flush=True)
+    ok = await post_reply(ESCALATION_PERSONA_KEY, f"<@{DISCORD_USER_ID}> {reason}")
+    if ok:
+        record_ping()
+    else:
+        print("[escalate] failed to send ping", flush=True)
 
 
 async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord.TextChannel, passive_note: str = WATCH_NOTE, should_escalate: bool = False):
