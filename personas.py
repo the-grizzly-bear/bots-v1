@@ -7,7 +7,7 @@
 
 PERSONAS = {
     "analyst": {
-        "name": "Analyst",
+        "name": "Ditto",
         "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/analyst.png",
         "webhook_env": "WEBHOOK_PERSONA_ANALYST",
         "system_prompt": (
@@ -17,7 +17,7 @@ PERSONAS = {
         ),
     },
     "skeptic": {
-        "name": "Skeptic",
+        "name": "Haunter",
         "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/skeptic.png",
         "webhook_env": "WEBHOOK_PERSONA_SKEPTIC",
         "system_prompt": (
@@ -26,7 +26,7 @@ PERSONAS = {
         ),
     },
     "philosopher": {
-        "name": "Philosopher",
+        "name": "Mew",
         "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/philosopher.png",
         "webhook_env": "WEBHOOK_PERSONA_PHILOSOPHER",
         "system_prompt": (
@@ -35,7 +35,7 @@ PERSONAS = {
         ),
     },
     "confused": {
-        "name": "Confused",
+        "name": "Psyduck",
         "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/confused.png",
         "webhook_env": "WEBHOOK_PERSONA_CONFUSED",
         "system_prompt": (
@@ -44,7 +44,7 @@ PERSONAS = {
         ),
     },
     "cynic": {
-        "name": "Cynic",
+        "name": "Snorlax",
         "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/cynic.png",
         "webhook_env": "WEBHOOK_PERSONA_CYNIC",
         "system_prompt": (
@@ -53,7 +53,7 @@ PERSONAS = {
         ),
     },
     "maverick": {
-        "name": "Maverick",
+        "name": "Meowth",
         "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/maverick.png",
         "webhook_env": "WEBHOOK_PERSONA_MAVERICK",
         "system_prompt": (
@@ -62,7 +62,7 @@ PERSONAS = {
         ),
     },
     "scribe": {
-        "name": "Scribe",
+        "name": "Slowpoke",
         "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/scribe.png",
         "webhook_env": "WEBHOOK_PERSONA_SCRIBE",
         "system_prompt": (

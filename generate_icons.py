@@ -1,56 +1,68 @@
-"""Generates simple, original minimal-face avatar icons per persona -
-flat color field + basic geometric facial features (dot/line eyes, a mouth
-shape, optional brow). Fully original shapes, not based on any existing
-character design - just a clean abstract "face mark" per persona."""
+"""Generates persona avatars in a cute minimal style:
+round circular head, flat solid color, simple expressive features
+(dot eyes, curved mouth), soft organic shapes, playful and approachable."""
 
 from pathlib import Path
 from PIL import Image, ImageDraw
 
 OUT_DIR = Path(__file__).parent / "icons"
-SIZE = 256
-C = SIZE / 2  # center
+SIZE = 512
+C = SIZE / 2
 
 
-def base(bg):
+def base_circle(color):
     img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    draw.ellipse([4, 4, SIZE - 4, SIZE - 4], fill=bg + (255,))
-    return img, draw
-
-
-def eye(draw, cx, cy, r, color):
-    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=color)
+    ImageDraw.Draw(img).ellipse([0, 0, SIZE, SIZE], fill=color)
+    return img
 
 
 def make_analyst() -> Image.Image:
-    # calm, steady: level brow line, small round eyes, flat mouth
-    img, draw = base((42, 110, 108))
-    fg = (235, 245, 244, 255)
-    eye_y = C - 18
-    eye(draw, C - 40, eye_y, 12, fg)
-    eye(draw, C + 40, eye_y, 12, fg)
-    # brow: a single straight bar above both eyes
-    draw.rounded_rectangle([C - 62, eye_y - 34, C + 62, eye_y - 24], radius=5, fill=fg)
-    # mouth: flat line
-    draw.rounded_rectangle([C - 34, C + 46, C + 34, C + 56], radius=5, fill=fg)
+    img = base_circle((42, 156, 146, 255))  # teal
+    draw = ImageDraw.Draw(img)
+    fg = (250, 252, 251, 255)
+
+    # calm, steady vibe: two simple dot eyes, straight brow line, flat neutral mouth
+    eye_y = C - 40
+    eye_r = 18
+    draw.ellipse([C - 50, eye_y - eye_r, C - 50 + eye_r * 2, eye_y + eye_r], fill=fg)
+    draw.ellipse([C + 50 - eye_r * 2, eye_y - eye_r, C + 50, eye_y + eye_r], fill=fg)
+
+    # small pupils
+    pupil = 8
+    draw.ellipse([C - 50, eye_y - pupil, C - 50 + pupil * 2, eye_y + pupil], fill=(42, 156, 146, 255))
+    draw.ellipse([C + 50 - pupil * 2, eye_y - pupil, C + 50, eye_y + pupil], fill=(42, 156, 146, 255))
+
+    # straight brow
+    draw.rounded_rectangle([C - 62, eye_y - 48, C + 62, eye_y - 38], radius=8, fill=fg)
+    # flat mouth
+    draw.rounded_rectangle([C - 34, C + 72, C + 34, C + 88], radius=6, fill=fg)
+
+    img = img.resize((256, 256), Image.LANCZOS)
     return img
 
 
 def make_skeptic() -> Image.Image:
-    # skeptical: one raised brow, asymmetric eyes, slight smirk
-    img, draw = base((140, 70, 70))
-    fg = (250, 235, 230, 255)
-    eye_y = C - 16
-    eye(draw, C - 40, eye_y, 11, fg)
-    eye(draw, C + 40, eye_y - 8, 9, fg)  # slightly smaller/higher = skeptical
-    # brows: left flat, right angled up
-    draw.rounded_rectangle([C - 60, eye_y - 32, C - 18, eye_y - 22], radius=5, fill=fg)
-    draw.polygon(
-        [(C + 18, eye_y - 16), (C + 62, eye_y - 34), (C + 62, eye_y - 24), (C + 24, eye_y - 8)],
-        fill=fg,
-    )
-    # mouth: smirk (asymmetric arc)
-    draw.arc([C - 40, C + 20, C + 40, C + 70], start=200, end=340, fill=fg, width=8)
+    img = base_circle((220, 100, 70, 255))  # coral/rust
+    draw = ImageDraw.Draw(img)
+    fg = (255, 240, 225, 255)
+
+    eye_y = C - 40
+    # one narrowed eye (skeptical), one normal eye
+    draw.rounded_rectangle([C - 50, eye_y - 14, C - 18, eye_y + 14], radius=8, fill=fg)
+    eye_r = 18
+    draw.ellipse([C + 50 - eye_r * 2, eye_y - eye_r, C + 50, eye_y + eye_r], fill=fg)
+
+    # pupils
+    draw.rounded_rectangle([C - 48, eye_y - 8, C - 22, eye_y + 8], radius=5, fill=(220, 100, 70, 255))
+    pupil = 8
+    draw.ellipse([C + 50 - pupil * 2, eye_y - pupil, C + 50, eye_y + pupil], fill=(220, 100, 70, 255))
+
+    # raised brow (skeptical)
+    draw.rounded_rectangle([C - 60, eye_y - 46, C - 20, eye_y - 36], radius=8, fill=fg)
+    # smirk/slight frown
+    draw.arc([C - 50, C + 50, C + 50, C + 130], start=200, end=340, fill=fg, width=10)
+
+    img = img.resize((256, 256), Image.LANCZOS)
     return img
 
 
