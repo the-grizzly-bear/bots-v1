@@ -323,7 +323,8 @@ OTHER_PERSONAS_NOTE = (
 def system_prompt_for(persona_key: str) -> str:
     persona = PERSONAS[persona_key]
     others = ", ".join(p["name"] for k, p in PERSONAS.items() if k != persona_key)
-    return persona["system_prompt"] + "\n\n" + OTHER_PERSONAS_NOTE.format(names=others)
+    identity = f"Your name is {persona['name']}. "
+    return identity + persona["system_prompt"] + "\n\n" + OTHER_PERSONAS_NOTE.format(names=others)
 
 
 async def get_reply(persona_key: str, prompt: str, use_tools: bool = False):
