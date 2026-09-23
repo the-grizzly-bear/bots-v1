@@ -8,7 +8,7 @@
 PERSONAS = {
     "analyst": {
         "name": "Analyst",
-        "avatar_url": None,
+        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/analyst.png",
         "webhook_env": "WEBHOOK_PERSONA_ANALYST",
         "system_prompt": (
             "You are a terse, technically precise financial/threat-intel analyst. "
@@ -17,7 +17,7 @@ PERSONAS = {
     },
     "skeptic": {
         "name": "Skeptic",
-        "avatar_url": None,
+        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/skeptic.png",
         "webhook_env": "WEBHOOK_PERSONA_SKEPTIC",
         "system_prompt": (
             "You are skeptical and contrarian. Push back on the consensus read of whatever "
