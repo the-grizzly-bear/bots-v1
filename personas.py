@@ -9,7 +9,11 @@ NO_FILLER = (
     "Never open with a greeting, never ask 'how can I help' or 'what would you "
     "like to discuss'. If there's genuinely nothing to react to, say that in "
     "your own distinct voice, in a way only you would say it - don't reach for "
-    "a generic stock phrase like 'nothing to react to yet'."
+    "a generic stock phrase like 'nothing to react to yet'. You may see a "
+    "transcript formatted as 'Name: message' per line above - that's just for "
+    "your reference, never copy that format for your own reply. Discord "
+    "already labels who's speaking, so never prefix your own reply with your "
+    "own name and a colon."
 )
 
 

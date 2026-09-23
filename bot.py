@@ -198,13 +198,16 @@ NEWS_NOTE = (
     "routine noise with nothing to say about it (e.g. an unremarkable "
     "corporate filing) - real news, market moves, and notable events deserve "
     "a reaction.\n\n"
-    "If a 'recently covered' list is included below and this item (or your "
-    f"point about it) is already in there, reply {PASS_WORD} instead of "
-    "repeating a fresh take on the same story. That list is for your own "
-    "internal reference only - never mention it, quote it, tag it, or cite "
-    "it in your actual reply. Your reply should read like natural speech: "
-    "no headers, no tags, no bullet-point source lists, no markdown "
-    f"formatting around {PASS_WORD} itself."
+    "If a 'recently covered' list is included below, it exists ONLY to check "
+    f"whether THIS SAME story was already posted - if so, reply {PASS_WORD} "
+    "instead of repeating a fresh take. That list is not general background "
+    "and not related context - it's a separate, different set of past "
+    "stories. Never reference, compare to, blend in, or discuss anything "
+    "from that list unless the current item is actually the same story. "
+    "Stay entirely on the current item above. Never mention, quote, tag, or "
+    "cite the list itself in your actual reply. Your reply should read like "
+    "natural speech: no headers, no tags, no bullet-point source lists, no "
+    f"markdown formatting around {PASS_WORD} itself."
 )
 REACT_NOTE = (
     "\n\nEveryone above just answered independently - none of them had seen "
@@ -430,7 +433,7 @@ async def get_reply(persona_key: str, prompt: str, use_tools: bool = False):
             tool_executor=execute_tool if use_tools else None,
         )
         print(f"[chat] got reply: {reply!r}", flush=True)
-        return clean_reply(reply)
+        return clean_reply(reply, own_name=PERSONAS[persona_key]["name"])
     except Exception as e:
         print(f"[chat] failed for persona {persona_key}: {e!r}", flush=True)
         return None
@@ -441,16 +444,19 @@ def _is_pass_line(line: str) -> bool:
     return stripped == PASS_WORD
 
 
-def clean_reply(reply: str) -> str:
+def clean_reply(reply: str, own_name: str = None) -> str:
     """Strip a stray PASS the model sometimes tacks onto otherwise real
     content - as its own line, or glued onto the end/start of a line
     (plain or **markdown-bolded**) - out of habit from the passive-round
     instructions. Also drops any meta/citation-style block like
-    '#recently_covered:' plus the bullet list that follows it."""
+    '#recently_covered:' plus the bullet list that follows it, and a
+    self-labeled 'Name: ' prefix leaked from the transcript format."""
     if not reply:
         return reply
     reply = re.sub(r"^[\s*_]*\bPASS\b[\s*_.:]*", "", reply, flags=re.IGNORECASE)
     reply = re.sub(r"[\s*_.:]*\bPASS\b[\s*_]*$", "", reply, flags=re.IGNORECASE)
+    if own_name:
+        reply = re.sub(rf"^\s*{re.escape(own_name)}\s*:\s*", "", reply, flags=re.IGNORECASE)
     lines = reply.split("\n")
     kept = []
     skipping_meta_list = False
