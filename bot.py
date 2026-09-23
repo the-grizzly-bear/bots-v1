@@ -224,6 +224,9 @@ def is_pass(reply: str) -> bool:
     return stripped == PASS_WORD or len(stripped) == 0
 
 
+SAGE_NAME = "Sage"
+SAGE_AVATAR_URL = "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/synthesis.png"
+
 SYNTHESIS_SYSTEM_PROMPT = (
     "You are a neutral summarizer. Terse, objective, no personality, no "
     "opinion of your own - just distill. Ablation-tested: an unvoiced, "
@@ -259,8 +262,9 @@ async def maybe_synthesize(transcript_lines: list, typing_channel: discord.TextC
     if is_pass(reply):
         print("[synthesize] nothing to wrap up", flush=True)
         return
+    webhook_url = os.environ.get("WEBHOOK_PERSONA_ANALYST")  # shared webhook, any key works
     try:
-        await typing_channel.send(reply)
+        await post_to_webhook(webhook_url, reply, SAGE_NAME, SAGE_AVATAR_URL)
     except Exception as e:
         print(f"[synthesize] failed to post: {e!r}", flush=True)
 
