@@ -207,6 +207,15 @@ NEWS_NOTE = (
     "no headers, no tags, no bullet-point source lists, no markdown "
     f"formatting around {PASS_WORD} itself."
 )
+REACT_NOTE = (
+    "\n\nEveryone above just answered independently - none of them had seen "
+    "each other's replies yet. Now that you can see the full picture, do you "
+    "actually agree? If you genuinely disagree with someone, or want to build "
+    "on a specific point they made, say so in your own voice - name them if "
+    f"you're responding to something specific they said. If you have nothing "
+    f"real to add, reply with exactly the single word {PASS_WORD} - don't "
+    "force a reaction just to react."
+)
 
 
 def is_pass(reply: str) -> bool:
@@ -287,6 +296,24 @@ async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord
         for mentioned_key in find_mentioned_personas(reply, exclude=spoken):
             if mentioned_key not in queue:
                 queue.append(mentioned_key)
+
+    # reaction pass: if 2+ people already spoke, give each of them a real
+    # look at what the others said and a chance to push back or build on it -
+    # without this, independent replies never actually disagree with anyone,
+    # since the first round is parallel and nobody's seen anyone else's take.
+    reactors = [k for k in spoken if k in candidate_keys]
+    if len(transcript_lines) > 2 and reactors:
+        reaction_transcript = "\n".join(transcript_lines) + REACT_NOTE
+        raw_reactions = await asyncio.gather(*(get_reply(k, reaction_transcript) for k in reactors))
+        for key, reaction in zip(reactors, raw_reactions):
+            if is_pass(reaction):
+                continue
+            if not await post_reply(key, reaction):
+                continue
+            transcript_lines.append(f"{PERSONAS[key]['name']}: {reaction}")
+            for mentioned_key in find_mentioned_personas(reaction, exclude=spoken):
+                if mentioned_key not in queue:
+                    queue.append(mentioned_key)
 
     while queue and len(spoken) < MAX_TURNS:
         persona_key = queue.pop(0)
