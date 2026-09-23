@@ -26,7 +26,6 @@ client = discord.Client(intents=intents)
 
 NAME_TO_KEY = {p["name"].lower(): key for key, p in PERSONAS.items()}
 
-MAX_TURNS = 6
 NAME_RE = re.compile(r"[A-Za-z0-9_]+")
 
 CHANNEL_HISTORY_LIMIT = 15
@@ -225,6 +224,31 @@ def is_pass(reply: str) -> bool:
     return stripped == PASS_WORD or len(stripped) == 0
 
 
+SYNTHESIS_PERSONA_KEY = "scribe"  # Luna - already the "cut to the bottom line" persona
+SYNTHESIS_NOTE = (
+    "\n\nThe discussion above covered some ground, possibly including "
+    "disagreement between people. Distill it into a short bulleted wrap-up - "
+    "one bullet per distinct point or unresolved disagreement, substance "
+    "only, not a recap of who said what. This is the natural close of the "
+    "thread, so actually land on where things ended up if there's a clear "
+    f"answer. If the discussion was already simple and a wrap-up would add "
+    f"nothing beyond what's already obvious, reply with exactly the single "
+    f"word {PASS_WORD} instead of forcing a summary."
+)
+
+
+async def maybe_synthesize(transcript_lines: list, typing_channel: discord.TextChannel):
+    """Natural conclusion instead of a hard turn cap: once a discussion has
+    actually happened, let the scribe persona close it out with a bulleted
+    wrap-up - or skip entirely if there's nothing to distill."""
+    transcript = "\n".join(transcript_lines) + SYNTHESIS_NOTE
+    reply = await get_reply(SYNTHESIS_PERSONA_KEY, transcript)
+    if is_pass(reply):
+        print("[synthesize] nothing to wrap up", flush=True)
+        return
+    await post_reply(SYNTHESIS_PERSONA_KEY, reply)
+
+
 ESCALATION_SYSTEM_PROMPT = (
     "You are a neutral filter deciding whether a user should be personally "
     "notified about something. You are not a persona - be terse and objective."
@@ -281,7 +305,9 @@ async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord
     If nobody is named, every persona gets a chance to chime in but defaults
     to passing (PASS_WORD) unless they genuinely have something to add. If a
     reply mentions another known persona, that persona gets pulled in too.
-    Capped at MAX_TURNS total replies so nothing runs forever."""
+    No hard cap on rounds - naturally bounded since only len(PERSONAS)
+    distinct voices can ever be pulled in, and each speaks at most once
+    per phase. Ends with a synthesis wrap-up instead of an arbitrary cutoff."""
     forced_keys = list(dict.fromkeys(forced_keys))  # de-dup, keep order
     spoken = set(forced_keys)
 
@@ -327,7 +353,12 @@ async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord
                 if mentioned_key not in queue:
                     queue.append(mentioned_key)
 
-    while queue and len(spoken) < MAX_TURNS:
+    # No numeric cap here on purpose: `spoken` already makes this finite on
+    # its own (there are only len(PERSONAS) people who could ever be pulled
+    # in, and each can only enter this queue once), so an arbitrary turn
+    # limit isn't needed to prevent it running away - and an arbitrary limit
+    # was cutting off real discussions before they'd actually resolved.
+    while queue:
         persona_key = queue.pop(0)
         if persona_key in spoken:
             continue
@@ -344,6 +375,9 @@ async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord
         for mentioned_key in find_mentioned_personas(reply, exclude=spoken):
             if mentioned_key not in queue:
                 queue.append(mentioned_key)
+
+    if len(transcript_lines) > 3:
+        await maybe_synthesize(transcript_lines, typing_channel)
 
     if should_escalate:
         await maybe_escalate(transcript_lines, typing_channel)
