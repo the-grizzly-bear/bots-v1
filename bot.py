@@ -226,8 +226,9 @@ ESCALATION_PROMPT_TEMPLATE = (
     "Based on the ENTIRE discussion (not any single reply), should the user be "
     "personally pinged about this right now? Most things do not warrant it - "
     "only escalate for something genuinely important, urgent, or high-value.\n\n"
-    "Reply with exactly 'NO' if not worth pinging, or 'YES: <one tight sentence "
-    "explaining why the user should look at this now>' if it is."
+    "Reply with exactly 'NO' if not worth pinging, or 'YES: <BLUF/TL;DR - the "
+    "bottom line first, one tight sentence, no preamble, no hedging, just the "
+    "single most important fact and why it matters right now>' if it is."
 )
 
 
