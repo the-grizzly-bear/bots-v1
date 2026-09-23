@@ -298,6 +298,13 @@ ESCALATION_PROMPT_TEMPLATE = (
 ESCALATION_COOLDOWN_SECONDS = 600  # don't ping more than once per ~10 minutes
 ESCALATION_PERSONA_KEY = "analyst"  # ping goes out in this persona's voice
 
+# A burst of separate stories triggers many concurrent maybe_escalate() calls.
+# Without this lock, each one checks "any recent ping?" before any of them
+# has recorded its own, so the cooldown check passes for all of them at once -
+# this is what actually caused the "multiple pings from one burst" bug even
+# after the cooldown was added. The lock makes check-then-record atomic.
+_escalation_lock = asyncio.Lock()
+
 
 async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextChannel):
     """One consolidated judgment call over the WHOLE discussion, made after
@@ -308,25 +315,26 @@ async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextCha
     rather than the bare bot account."""
     if not DISCORD_USER_ID or len(transcript_lines) <= 1:
         return
-    if seconds_since_last_ping() < ESCALATION_COOLDOWN_SECONDS:
-        print("[escalate] skipped, still in cooldown", flush=True)
-        return
-    try:
-        verdict = await chat(ESCALATION_SYSTEM_PROMPT, ESCALATION_PROMPT_TEMPLATE.format(transcript="\n".join(transcript_lines)))
-    except Exception as e:
-        print(f"[escalate] failed: {e!r}", flush=True)
-        return
-    verdict = (verdict or "").strip()
-    if not verdict.upper().startswith("YES"):
-        print(f"[escalate] no ping warranted: {verdict!r}", flush=True)
-        return
-    reason = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
-    print(f"[escalate] pinging user via {ESCALATION_PERSONA_KEY}: {reason}", flush=True)
-    ok = await post_reply(ESCALATION_PERSONA_KEY, f"<@{DISCORD_USER_ID}> {reason}")
-    if ok:
-        record_ping()
-    else:
-        print("[escalate] failed to send ping", flush=True)
+    async with _escalation_lock:
+        if seconds_since_last_ping() < ESCALATION_COOLDOWN_SECONDS:
+            print("[escalate] skipped, still in cooldown", flush=True)
+            return
+        try:
+            verdict = await chat(ESCALATION_SYSTEM_PROMPT, ESCALATION_PROMPT_TEMPLATE.format(transcript="\n".join(transcript_lines)))
+        except Exception as e:
+            print(f"[escalate] failed: {e!r}", flush=True)
+            return
+        verdict = (verdict or "").strip()
+        if not verdict.upper().startswith("YES"):
+            print(f"[escalate] no ping warranted: {verdict!r}", flush=True)
+            return
+        reason = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
+        print(f"[escalate] pinging user via {ESCALATION_PERSONA_KEY}: {reason}", flush=True)
+        ok = await post_reply(ESCALATION_PERSONA_KEY, f"<@{DISCORD_USER_ID}> {reason}")
+        if ok:
+            record_ping()
+        else:
+            print("[escalate] failed to send ping", flush=True)
 
 
 async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord.TextChannel, passive_note: str = WATCH_NOTE, should_escalate: bool = False):
