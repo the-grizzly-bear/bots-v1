@@ -46,6 +46,13 @@ _META_TAG_RE = re.compile(r"<meta\s+([^>]*)>", re.IGNORECASE)
 _ATTR_RE = re.compile(r'([\w:-]+)\s*=\s*"([^"]*)"|([\w:-]+)\s*=\s*\'([^\']*)\'')
 _OG_KEYS = ("og:title", "twitter:title", "og:description", "twitter:description")
 
+# Some pages (bot-detection walls, JS-only shells) return a <body> that's
+# entirely inline JavaScript instead of an empty one - the empty-body/OG
+# fallback doesn't catch this since there IS text, it's just code, not
+# content. Feeding raw JS into the model's context is what produced garbled
+# leads like "sourceMapping:" prefixing an otherwise real reply.
+_JS_MARKERS_RE = re.compile(r"sourceMappingURL|\bfunction\s*\(|\bwindow\.\w+\s*=|\bvar\s+\w+\s*=")
+
 
 def _decode_entities(text: str) -> str:
     for entity, char in _ENTITIES.items():
@@ -208,6 +215,10 @@ async def _fetch_url_uncached(url: str) -> str:
         text = raw_text
     else:
         return f"Cannot read non-text content type '{content_type}' from {url}"
+
+    if _JS_MARKERS_RE.search(text):
+        og_text = _extract_og_meta(raw_text) if "html" in content_type else ""
+        text = og_text
 
     if not text.strip():
         return f"No readable text content found at {url}"
