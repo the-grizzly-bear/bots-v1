@@ -17,6 +17,7 @@ from market_data import get_ticker_context
 from uw_client import ticker_snapshot as get_uw_snapshot
 from threat_intel import check_indicator
 from community_intel import check_hn_discussion
+from archive import log_ioc_hit, log_notable
 
 DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 INTERACTIVE_CHANNEL_ID = int(os.environ["INTERACTIVE_CHANNEL_ID"])
@@ -271,7 +272,12 @@ async def execute_tool(name: str, args: dict) -> str:
         indicator = str(args.get("indicator", "")).strip()
         if not indicator:
             return "No indicator given."
-        return await check_indicator(indicator)
+        result = await check_indicator(indicator)
+        if "MATCH" in result or "ACTIVELY EXPLOITED" in result:
+            kind_line = result.split("\n", 1)[0]
+            kind = kind_line.split("(")[-1].rstrip("):") if "(" in kind_line else "unknown"
+            asyncio.create_task(log_ioc_hit(indicator, kind, result))
+        return result
     if name == "check_hn_discussion":
         query = str(args.get("query", "")).strip()
         if not query:
@@ -551,6 +557,11 @@ async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextCha
         if seconds_since_last_ping(tier) < cooldown:
             print(f"[escalate] {tier} skipped, still in cooldown", flush=True)
             return
+
+        if tier in ("CRITICAL", "HIGH", "MEDIUM"):
+            summary = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
+            asyncio.create_task(log_notable(tier, summary))
+
         role_id = os.environ.get(role_env)
         if not role_id:
             print(f"[escalate] {tier} verdict but {role_env} not set, skipping ping", flush=True)
