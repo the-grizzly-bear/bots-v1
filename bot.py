@@ -13,6 +13,7 @@ from ollama_chat import chat
 from poster import post_to_webhook
 from memory import remember, recent_context, seconds_since_last_ping, record_ping
 from web_fetch import fetch_url_content
+from market_data import get_ticker_context
 
 DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 INTERACTIVE_CHANNEL_ID = int(os.environ["INTERACTIVE_CHANNEL_ID"])
@@ -133,6 +134,32 @@ FETCH_URL_TOOL = {
 }
 
 
+TICKER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_ticker_context",
+        "description": (
+            "Look up a stock ticker's real current price, % change, volume, "
+            "and company name. Use this whenever a ticker symbol appears "
+            "(e.g. in a market alert) instead of guessing what the company "
+            "is or why it moved - tickers get reassigned to unrelated "
+            "companies after mergers/delistings, so the symbol alone can be "
+            "misleading."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {
+                    "type": "string",
+                    "description": "The ticker symbol, e.g. 'PARA' or 'GDDY'.",
+                }
+            },
+            "required": ["ticker"],
+        },
+    },
+}
+
+
 async def execute_tool(name: str, args: dict) -> str:
     if name == "read_channel":
         channel_name = str(args.get("channel_name", "")).lstrip("#").lower()
@@ -150,6 +177,11 @@ async def execute_tool(name: str, args: dict) -> str:
         if not url:
             return "No URL given."
         return await fetch_url_content(url)
+    if name == "get_ticker_context":
+        ticker = str(args.get("ticker", "")).strip()
+        if not ticker:
+            return "No ticker given."
+        return await get_ticker_context(ticker)
     return f"Unknown tool: {name}"
 
 
@@ -530,7 +562,10 @@ OTHER_PERSONAS_NOTE = (
     "specific channel - never guess or invent what a channel might contain. "
     "You also have a fetch_url tool that reads the actual content of a link "
     "you've been given - use it instead of guessing what an article or "
-    "commit says from its title alone."
+    "commit says from its title alone. You have a get_ticker_context tool "
+    "that looks up a stock ticker's real current price and company name - "
+    "use it whenever a ticker symbol shows up instead of guessing what the "
+    "company is, since symbols get reassigned to unrelated companies over time."
 )
 
 
@@ -571,7 +606,7 @@ async def get_reply(persona_key: str, prompt: str):
             reply = await chat(
                 system_prompt_for(persona_key),
                 prompt,
-                tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL],
+                tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL, TICKER_TOOL],
                 tool_executor=execute_tool,
             )
             print(f"[chat] got reply: {reply!r}", flush=True)
