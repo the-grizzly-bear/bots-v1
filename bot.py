@@ -808,6 +808,15 @@ def clean_reply(reply: str, own_name: str = None) -> str:
         "", reply, flags=re.DOTALL,
     )
     reply = re.sub(r"</?tool_call>", "", reply, flags=re.IGNORECASE)
+    # Same degeneration, different script: a single garbled non-Latin token
+    # glued onto the front of an otherwise-fine English reply (e.g.
+    # "Александреску, that means..."). _is_mostly_non_english only catches
+    # this when non-Latin makes up >20% of the WHOLE reply, so one stray
+    # foreign word on an otherwise-long English sentence slips past it -
+    # strip it here the same way the camelCase lead-in token is stripped.
+    reply = re.sub(
+        rf"^\s*[{_NON_LATIN_SCRIPT_RE.pattern[1:-1]}]+[,:;]?\s*", "", reply
+    )
     # Same degeneration, milder form: a garbled camelCase-looking lead-in
     # token before a colon with no JSON block attached (e.g. "sourceMapping:
     # <real reply>", "iNdEx: <real reply>") - real English words never have
@@ -824,6 +833,12 @@ def clean_reply(reply: str, own_name: str = None) -> str:
     reply = re.sub(r"\n{2,}", "\n", reply).strip()
     reply = re.sub(r"^[\s*_]*\bPASS\b[\s*_.:]*", "", reply, flags=re.IGNORECASE)
     reply = re.sub(r"[\s*_.:]*\bPASS\b[\s*_.:]*$", "", reply, flags=re.IGNORECASE)
+    # THINK_FIRST says never show the reasoning, just the conclusion - but
+    # the model sometimes leaks its own PASS/no-PASS deliberation as visible
+    # text ("No PASS - the item is noteworthy...") instead of silently
+    # deciding. That's meta-commentary about the reply, not content - strip
+    # just the prefix (whatever real content follows it stays).
+    reply = re.sub(r"(?m)^\s*(?:no|not a)\s+pass\b\s*[-:]?\s*", "", reply, flags=re.IGNORECASE)
     if own_name:
         reply = re.sub(rf"^\s*{re.escape(own_name)}\s*:\s*", "", reply, flags=re.IGNORECASE)
     lines = reply.split("\n")
