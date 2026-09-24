@@ -254,12 +254,6 @@ NEWS_NOTE = (
     "a reaction. If the title or summary alone is vague or uses unfamiliar "
     "terminology, use your fetch_url tool on the link before reacting instead "
     "of speculating about what it probably means.\n\n"
-    "Check the link's domain BEFORE reacting to the content. If it's an "
-    "obvious placeholder or test domain (example.com, test.com, foo.bar, or "
-    "similar generic/fake-looking domains), don't analyze the content as if "
-    "it were genuine - call that out instead, but in your own voice like "
-    "everything else you say, not a stock phrase everyone would say "
-    "identically.\n\n"
     "A 'recently covered' list may be included below. It is DATA, not "
     f"content. Its ONLY purpose: check whether THIS SAME story already ran - "
     f"if so, reply {PASS_WORD}. You may NEVER summarize it, report on it, "
@@ -542,25 +536,49 @@ def system_prompt_for(persona_key: str) -> str:
     return identity + persona["system_prompt"] + "\n\n" + OTHER_PERSONAS_NOTE.format(names=others)
 
 
+_NON_LATIN_SCRIPT_RE = re.compile(
+    r"[一-鿿぀-ヿ가-힯Ѐ-ӿ؀-ۿ]"
+)
+
+
+def _is_mostly_non_english(text: str) -> bool:
+    """Prompt-level 'always reply in English' isn't 100% reliable - qwen2.5
+    occasionally drifts into Chinese (or other scripts) with no content
+    trigger. Catching it here instead of trusting the instruction alone,
+    same approach as the other model-degeneration fixes (PASS leaks, fake
+    tool calls)."""
+    letters = re.findall(r"\w", text, flags=re.UNICODE)
+    if len(letters) < 10:
+        return False
+    non_latin = len(_NON_LATIN_SCRIPT_RE.findall(text))
+    return non_latin / len(letters) > 0.2
+
+
 async def get_reply(persona_key: str, prompt: str):
     # Tools are always passed, never conditional - the system prompt
     # (OTHER_PERSONAS_NOTE) unconditionally tells every persona it has these
     # tools, so leaving them unwired for some calls made the model type out
     # a fake 'fetch_url(...)' as plain text instead of a real tool call, with
     # no real result to ground the reply.
-    try:
-        print(f"[chat] calling ollama for {persona_key}...", flush=True)
-        reply = await chat(
-            system_prompt_for(persona_key),
-            prompt,
-            tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL],
-            tool_executor=execute_tool,
-        )
-        print(f"[chat] got reply: {reply!r}", flush=True)
-        return clean_reply(reply, own_name=PERSONAS[persona_key]["name"])
-    except Exception as e:
-        print(f"[chat] failed for persona {persona_key}: {e!r}", flush=True)
-        return None
+    for attempt in range(2):
+        try:
+            print(f"[chat] calling ollama for {persona_key}...", flush=True)
+            reply = await chat(
+                system_prompt_for(persona_key),
+                prompt,
+                tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL],
+                tool_executor=execute_tool,
+            )
+            print(f"[chat] got reply: {reply!r}", flush=True)
+            if reply and _is_mostly_non_english(reply):
+                print(f"[chat] {persona_key} replied in a non-English script, retrying" if attempt == 0 else f"[chat] {persona_key} still non-English after retry, dropping", flush=True)
+                if attempt == 0:
+                    continue
+                return None
+            return clean_reply(reply, own_name=PERSONAS[persona_key]["name"])
+        except Exception as e:
+            print(f"[chat] failed for persona {persona_key}: {e!r}", flush=True)
+            return None
 
 
 def _is_pass_line(line: str) -> bool:
