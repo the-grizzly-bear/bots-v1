@@ -14,6 +14,7 @@ from poster import post_to_webhook
 from memory import remember, recent_context, seconds_since_last_ping, record_ping
 from web_fetch import fetch_url_content
 from market_data import get_ticker_context
+from uw_client import ticker_snapshot as get_uw_snapshot
 
 DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 INTERACTIVE_CHANNEL_ID = int(os.environ["INTERACTIVE_CHANNEL_ID"])
@@ -160,6 +161,32 @@ TICKER_TOOL = {
 }
 
 
+UW_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_unusual_whales_data",
+        "description": (
+            "Look up real options flow, dark pool activity, and GEX for a "
+            "ticker from the user's own Unusual Whales account - this is "
+            "what actually explains WHY a stock is moving unusually, unlike "
+            "get_ticker_context which only gives price/company-name. Use "
+            "this when a market alert needs real 'why' context, not just "
+            "identity confirmation."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {
+                    "type": "string",
+                    "description": "The ticker symbol, e.g. 'PARA' or 'GDDY'.",
+                }
+            },
+            "required": ["ticker"],
+        },
+    },
+}
+
+
 async def execute_tool(name: str, args: dict) -> str:
     if name == "read_channel":
         channel_name = str(args.get("channel_name", "")).lstrip("#").lower()
@@ -182,6 +209,11 @@ async def execute_tool(name: str, args: dict) -> str:
         if not ticker:
             return "No ticker given."
         return await get_ticker_context(ticker)
+    if name == "get_unusual_whales_data":
+        ticker = str(args.get("ticker", "")).strip()
+        if not ticker:
+            return "No ticker given."
+        return await get_uw_snapshot(ticker)
     return f"Unknown tool: {name}"
 
 
@@ -565,7 +597,11 @@ OTHER_PERSONAS_NOTE = (
     "commit says from its title alone. You have a get_ticker_context tool "
     "that looks up a stock ticker's real current price and company name - "
     "use it whenever a ticker symbol shows up instead of guessing what the "
-    "company is, since symbols get reassigned to unrelated companies over time."
+    "company is, since symbols get reassigned to unrelated companies over "
+    "time. You also have a get_unusual_whales_data tool with real options "
+    "flow, dark pool, and GEX data for a ticker from the user's own account "
+    "- use it when you actually need to know WHY a stock is moving, not "
+    "just what it is."
 )
 
 
@@ -606,7 +642,7 @@ async def get_reply(persona_key: str, prompt: str):
             reply = await chat(
                 system_prompt_for(persona_key),
                 prompt,
-                tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL, TICKER_TOOL],
+                tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL, TICKER_TOOL, UW_TOOL],
                 tool_executor=execute_tool,
             )
             print(f"[chat] got reply: {reply!r}", flush=True)
