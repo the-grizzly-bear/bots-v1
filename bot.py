@@ -18,6 +18,7 @@ from uw_client import ticker_snapshot as get_uw_snapshot
 from threat_intel import check_indicator
 from community_intel import check_hn_discussion
 from archive import log_ioc_hit, log_notable, log_rule_update
+from raw_archive import log_raw_post, flush_loop as raw_archive_flush_loop
 
 DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 INTERACTIVE_CHANNEL_ID = int(os.environ["INTERACTIVE_CHANNEL_ID"])
@@ -306,6 +307,7 @@ async def on_ready():
             if ch.name.lower() in WATCHED_CHANNEL_NAMES:
                 watched_channel_ids.add(ch.id)
     interactive_channel = client.get_channel(INTERACTIVE_CHANNEL_ID)
+    asyncio.create_task(raw_archive_flush_loop())
     print(f"Logged in as {client.user} (bots-v1), watching channel {INTERACTIVE_CHANNEL_ID}, "
           f"can read {len(channel_name_to_obj)} channels, monitoring "
           f"{len(watched_channel_ids)} news channels for auto-reactions", flush=True)
@@ -318,6 +320,7 @@ async def handle_watched_post(message: discord.Message):
     if not text:
         return
     remember(message.channel.name, text)
+    asyncio.create_task(log_raw_post(message.channel.name, message.author.name, text))
     context = recent_context()
     prompt = f"New post just now in #{message.channel.name} from {message.author.name}: {text}"
     if context:
