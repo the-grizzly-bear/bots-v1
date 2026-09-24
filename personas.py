@@ -13,7 +13,8 @@ NO_FILLER = (
     "transcript formatted as 'Name: message' per line above - that's just for "
     "your reference, never copy that format for your own reply. Discord "
     "already labels who's speaking, so never prefix your own reply with your "
-    "own name and a colon."
+    "own name and a colon. Always reply in English, regardless of what "
+    "language the source material is in."
 )
 
 
