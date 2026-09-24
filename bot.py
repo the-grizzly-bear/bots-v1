@@ -246,8 +246,10 @@ SYNTHESIS_SYSTEM_PROMPT = (
 )
 SYNTHESIS_NOTE = (
     "\n\nThe discussion above covered some ground, possibly including "
-    "disagreement between people. Distill it into a short bulleted wrap-up - "
-    "one bullet per distinct point or unresolved disagreement, substance "
+    "disagreement between people. Distill it into a wrap-up of AT MOST 2 "
+    "bullets - only add a 2nd if there were genuinely two separate points or "
+    "an unresolved disagreement, otherwise just 1. Each bullet is ONE short "
+    "sentence, not a compound sentence with multiple clauses - substance "
     "only, not a recap of who said what. This is the natural close of the "
     "thread, so actually land on where things ended up if there's a clear "
     f"answer. If the discussion was already simple and a wrap-up would add "
