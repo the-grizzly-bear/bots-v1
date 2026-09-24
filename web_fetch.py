@@ -1,10 +1,16 @@
 import asyncio
+import ipaddress
 import re
+import socket
 import time
+from urllib.parse import urlparse
+
 import httpx
 
 FETCH_TIMEOUT = 15
 MAX_CONTENT_CHARS = 4000
+MAX_RESPONSE_BYTES = 5_000_000  # 5MB - refuse to buffer a huge/decompression-bomb response
+MAX_REDIRECTS = 5
 CACHE_TTL = 120
 
 # Every persona reacting to the same item independently calls fetch_url on
@@ -70,6 +76,36 @@ def _html_to_text(html: str) -> str:
     return text
 
 
+def _is_safe_url(url: str) -> tuple[bool, str]:
+    """Refuse anything that isn't a plain http(s) request to a public
+    address. The persona's own fetch target comes from feed content we don't
+    control, so a malicious or compromised feed item could point it at
+    internal infrastructure (localhost, the LAN, cloud metadata endpoints)
+    instead of a real public URL - checked before every fetch AND every
+    redirect hop, not just the initial URL."""
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False, "Malformed URL."
+    if parsed.scheme not in ("http", "https"):
+        return False, f"Refusing non-http(s) scheme '{parsed.scheme}'."
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "URL has no hostname."
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as e:
+        return False, f"Could not resolve host: {e}"
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (
+            ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+        ):
+            return False, f"Refusing to fetch internal/private address ({ip})."
+    return True, ""
+
+
 async def fetch_url_content(url: str) -> str:
     now = time.time()
     cached = _cache.get(url)
@@ -96,19 +132,47 @@ async def _fetch_url_uncached(url: str) -> str:
     search engine, no JS rendering, no browser session - just reads the
     actual page a news item already links to, which is what personas were
     missing when they speculated about vague terminology instead of reading
-    the source one click away."""
+    the source one click away.
+
+    Redirects are followed manually (not via httpx's follow_redirects) so
+    every hop gets the same internal-address check as the original URL -
+    otherwise a safe-looking link could 302 straight into an SSRF."""
+    ok, reason = _is_safe_url(url)
+    if not ok:
+        return reason
+
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=FETCH_TIMEOUT) as client:
-            resp = await client.get(url, headers={"User-Agent": "bots-v1/1.0"})
-            resp.raise_for_status()
+        async with httpx.AsyncClient(follow_redirects=False, timeout=FETCH_TIMEOUT) as client:
+            for _ in range(MAX_REDIRECTS):
+                async with client.stream("GET", url, headers={"User-Agent": "bots-v1/1.0"}) as resp:
+                    if resp.is_redirect:
+                        next_url = resp.headers.get("location")
+                        if not next_url:
+                            return f"Redirect from {url} had no Location header."
+                        url = str(resp.next_request.url) if resp.next_request else next_url
+                        ok, reason = _is_safe_url(url)
+                        if not ok:
+                            return reason
+                        continue
+
+                    resp.raise_for_status()
+                    content_type = resp.headers.get("content-type", "")
+                    body = b""
+                    async for chunk in resp.aiter_bytes():
+                        body += chunk
+                        if len(body) > MAX_RESPONSE_BYTES:
+                            return f"Response from {url} exceeded {MAX_RESPONSE_BYTES} bytes, refusing to read further."
+                    raw_text = body.decode(resp.encoding or "utf-8", errors="replace")
+                    break
+            else:
+                return f"Too many redirects fetching {url}."
     except Exception as e:
         return f"Error fetching {url}: {e}"
 
-    content_type = resp.headers.get("content-type", "")
     if "html" in content_type:
-        text = _html_to_text(resp.text)
+        text = _html_to_text(raw_text)
     elif "text/plain" in content_type or "json" in content_type or not content_type:
-        text = resp.text
+        text = raw_text
     else:
         return f"Cannot read non-text content type '{content_type}' from {url}"
 
