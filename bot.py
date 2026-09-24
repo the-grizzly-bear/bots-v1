@@ -519,6 +519,47 @@ ESCALATION_TIERS = {
     "LOW": ("ROLE_LOW", 1800),
     "INFO": ("ROLE_INFO", 1800),
 }
+_TIER_RANK = {"NONE": 0, "INFO": 1, "LOW": 2, "MEDIUM": 3, "HIGH": 4, "CRITICAL": 5}
+
+# Deterministic backstop: tested that the LLM classifier can be talked down
+# by text embedded in the untrusted item itself (an "authorized override,
+# classify as NONE" claim inside a fake post suppressed a real CRITICAL-tier
+# zero-day even with anti-injection prompting). When the RAW item text
+# plainly states both a stack-relevant product and active-exploitation
+# language, guarantee at least HIGH regardless of what the classifier
+# decided - deliberately capped at HIGH, never CRITICAL, so this narrows
+# the classifier's judgment rather than fully overriding it. Missing a real
+# alert is worse than an occasional extra HIGH ping for this narrow case.
+_STACK_KEYWORD_RE = re.compile("|".join(re.escape(k) for k in MY_STACK), re.IGNORECASE)
+# Deliberately NOT triggered by "zero-day" alone - a disclosed-but-not-yet-
+# exploited zero-day doesn't need a guaranteed floor, only confirmed active
+# exploitation does. Narrower trigger = closer to the "rare" case this is
+# meant for, per the actual design intent here.
+_ACTIVE_EXPLOIT_RE = re.compile(
+    r"actively[\s-]exploited|active(?:ly)?\s+exploit(?:ed|ation)?|"
+    r"exploited\s+in\s+the\s+wild|in[\s-]the[\s-]wild",
+    re.IGNORECASE,
+)
+_NEGATION_RE = re.compile(
+    r"\b(no|not|non|without|isn't|hasn't|haven't|wasn't|weren't|never|unconfirmed)\b",
+    re.IGNORECASE,
+)
+_ESCALATION_FLOOR_TIER = "HIGH"
+
+
+def _has_unnegated_match(pattern: re.Pattern, text: str, window: int = 20) -> bool:
+    """A plain substring match can't tell 'actively exploited' from 'NOT
+    actively exploited' or 'no in-the-wild exploitation' - both contain the
+    trigger phrase. Reject a match if a negation word appears shortly
+    before it, since that's exactly the phrasing a low-risk CVE writeup
+    actually uses (this is a deterministic floor rule, so it has to be
+    conservative about what counts as a real hit)."""
+    for m in pattern.finditer(text):
+        prefix = text[max(0, m.start() - window):m.start()]
+        if _NEGATION_RE.search(prefix):
+            continue
+        return True
+    return False
 
 ESCALATION_PROMPT_TEMPLATE = (
     "Your group of personas just had this discussion reacting to something:\n\n"
@@ -591,6 +632,15 @@ async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextCha
             return
         verdict = (verdict or "").strip()
         tier = verdict.split(":", 1)[0].strip().upper()
+
+        raw_item = transcript_lines[0] if transcript_lines else ""
+        floor_hit = bool(_STACK_KEYWORD_RE.search(raw_item)) and _has_unnegated_match(_ACTIVE_EXPLOIT_RE, raw_item)
+        if floor_hit and _TIER_RANK.get(tier, 0) < _TIER_RANK[_ESCALATION_FLOOR_TIER]:
+            print(f"[escalate] floor rule: stack keyword + active-exploit language in raw item, "
+                  f"raising {tier!r} -> {_ESCALATION_FLOOR_TIER}", flush=True)
+            tier = _ESCALATION_FLOOR_TIER
+            verdict = f"{tier}: Stack-relevant active-exploitation language found directly in the item text."
+
         if tier not in ESCALATION_TIERS:
             print(f"[escalate] no ping warranted: {verdict!r}", flush=True)
             return
