@@ -16,6 +16,7 @@ from web_fetch import fetch_url_content
 from market_data import get_ticker_context
 from uw_client import ticker_snapshot as get_uw_snapshot
 from threat_intel import check_indicator
+from community_intel import check_hn_discussion
 
 DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 INTERACTIVE_CHANNEL_ID = int(os.environ["INTERACTIVE_CHANNEL_ID"])
@@ -215,6 +216,30 @@ THREAT_INTEL_TOOL = {
 }
 
 
+HN_DISCUSSION_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "check_hn_discussion",
+        "description": (
+            "Check whether a URL or topic has real Hacker News discussion - "
+            "a free community-engagement signal (points, comment count) for "
+            "whether the tech community actually found something significant, "
+            "distinct from threat-specific corroboration."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "A URL or topic/keyword phrase to search for.",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+
 async def execute_tool(name: str, args: dict) -> str:
     if name == "read_channel":
         channel_name = str(args.get("channel_name", "")).lstrip("#").lower()
@@ -247,6 +272,11 @@ async def execute_tool(name: str, args: dict) -> str:
         if not indicator:
             return "No indicator given."
         return await check_indicator(indicator)
+    if name == "check_hn_discussion":
+        query = str(args.get("query", "")).strip()
+        if not query:
+            return "No query given."
+        return await check_hn_discussion(query)
     return f"Unknown tool: {name}"
 
 
@@ -638,7 +668,10 @@ OTHER_PERSONAS_NOTE = (
     "checks a real IP, domain, URL, or file hash against Shodan, "
     "VirusTotal, urlscan.io, ThreatFox, MalwareBazaar, URLhaus, YARAify, "
     "and Feodo Tracker - use it on an actual indicator from an IOC dump or "
-    "research post instead of taking the claim at face value."
+    "research post instead of taking the claim at face value. You also have "
+    "a check_hn_discussion tool that checks whether a URL or topic has real "
+    "Hacker News community engagement - use it to gauge whether the tech "
+    "community actually cares about something, separate from threat data."
 )
 
 
@@ -679,7 +712,7 @@ async def get_reply(persona_key: str, prompt: str):
             reply = await chat(
                 system_prompt_for(persona_key),
                 prompt,
-                tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL, TICKER_TOOL, UW_TOOL, THREAT_INTEL_TOOL],
+                tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL, TICKER_TOOL, UW_TOOL, THREAT_INTEL_TOOL, HN_DISCUSSION_TOOL],
                 tool_executor=execute_tool,
             )
             print(f"[chat] got reply: {reply!r}", flush=True)

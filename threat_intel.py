@@ -10,6 +10,7 @@ import ipaddress
 import os
 import re
 import time
+from urllib.parse import urlparse
 
 import httpx
 
@@ -271,6 +272,22 @@ async def _greynoise(ip: str) -> str | None:
     return "GreyNoise: not observed mass-scanning the internet (doesn't rule out targeted activity)."
 
 
+# ---- Google DNS-over-HTTPS (free, no key) ----
+
+async def _dns_resolve(domain: str) -> str | None:
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            r = await client.get("https://dns.google/resolve", params={"name": domain, "type": "A"})
+            d = r.json()
+    except Exception as e:
+        return f"DNS: error ({e})."
+    answers = d.get("Answer", [])
+    if not answers:
+        return "DNS: no A record found (doesn't resolve right now)."
+    ips = [a.get("data") for a in answers if a.get("type") == 1]
+    return f"DNS: currently resolves to {ips}"
+
+
 # ---- AlienVault OTX (free, no key needed for general lookups) ----
 
 _OTX_TYPE_MAP = {"ip": "IPv4", "domain": "domain", "url": "url", "hash": "file"}
@@ -334,12 +351,15 @@ async def check_indicator(indicator: str) -> str:
         results = await asyncio.gather(
             _vt("domains", indicator), _urlscan_search(f"domain:{indicator}"),
             _threatfox(indicator), _otx(indicator, "domain"), _wayback_age(indicator),
+            _dns_resolve(indicator),
             return_exceptions=True,
         )
     elif kind == "url":
+        hostname = urlparse(indicator).hostname or indicator
         results = await asyncio.gather(
             _urlhaus(indicator, is_url=True), _urlscan_search(f'page.url:"{indicator}"'),
             _vt_url(indicator), _otx(indicator, "url"), _wayback_age(indicator),
+            _dns_resolve(hostname),
             return_exceptions=True,
         )
     else:  # hash
