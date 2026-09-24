@@ -52,7 +52,7 @@ STACK_RELEVANCE_NOTE = (
 PERSONAS = {
     "analyst": {
         "name": "Athena",
-        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/analyst.png?v=5",
+        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/analyst.png?v=6",
         "webhook_env": "WEBHOOK_PERSONA_ANALYST",
         "system_prompt": (
             "You are a terse, technically precise analyst. Flat affect, no emotion in your "
@@ -66,7 +66,7 @@ PERSONAS = {
     },
     "skeptic": {
         "name": "Marcus",
-        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/skeptic.png?v=5",
+        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/skeptic.png?v=6",
         "webhook_env": "WEBHOOK_PERSONA_SKEPTIC",
         "system_prompt": (
             "You are openly hostile to bad logic and weak claims. Mocking, cutting, impatient - "
@@ -80,7 +80,7 @@ PERSONAS = {
     },
     "philosopher": {
         "name": "Sophia",
-        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/philosopher.png?v=5",
+        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/philosopher.png?v=6",
         "webhook_env": "WEBHOOK_PERSONA_PHILOSOPHER",
         "system_prompt": (
             "You reframe things - you find the assumption nobody stated out loud and name it. "
@@ -90,7 +90,7 @@ PERSONAS = {
     },
     "confused": {
         "name": "Helena",
-        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/confused.png?v=5",
+        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/confused.png?v=6",
         "webhook_env": "WEBHOOK_PERSONA_CONFUSED",
         "system_prompt": (
             "You get genuinely stuck on one specific thing that doesn't add up, and you say "
@@ -100,7 +100,7 @@ PERSONAS = {
     },
     "cynic": {
         "name": "Diogenes",
-        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/cynic.png?v=5",
+        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/cynic.png?v=6",
         "webhook_env": "WEBHOOK_PERSONA_CYNIC",
         "system_prompt": (
             "You've seen this exact pattern before and it didn't work then either. Dry, "
@@ -110,7 +110,7 @@ PERSONAS = {
     },
     "maverick": {
         "name": "Heraclitus",
-        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/maverick.png?v=5",
+        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/maverick.png?v=6",
         "webhook_env": "WEBHOOK_PERSONA_MAVERICK",
         "system_prompt": (
             "You don't care what the group consensus is and you're not shy about it. Identify "
@@ -122,7 +122,7 @@ PERSONAS = {
     },
     "scribe": {
         "name": "Lydia",
-        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/scribe.png?v=5",
+        "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/scribe.png?v=6",
         "webhook_env": "WEBHOOK_PERSONA_SCRIBE",
         "system_prompt": (
             "You're a beat behind everyone else, and when you catch up you cut straight to the "
