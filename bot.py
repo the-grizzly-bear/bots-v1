@@ -15,6 +15,7 @@ from memory import remember, recent_context, seconds_since_last_ping, record_pin
 from web_fetch import fetch_url_content
 from market_data import get_ticker_context
 from uw_client import ticker_snapshot as get_uw_snapshot
+from threat_intel import check_indicator
 
 DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 INTERACTIVE_CHANNEL_ID = int(os.environ["INTERACTIVE_CHANNEL_ID"])
@@ -187,6 +188,33 @@ UW_TOOL = {
 }
 
 
+THREAT_INTEL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "check_threat_indicator",
+        "description": (
+            "Check an IP, domain, URL, or file hash against real "
+            "threat-intel sources (Shodan, VirusTotal, urlscan.io, "
+            "ThreatFox, MalwareBazaar, URLhaus, YARAify, Feodo Tracker) - "
+            "the actual services this data comes from, on the user's own "
+            "registered access. Use this to verify whether an indicator "
+            "from an IOC dump or research post is a real, currently known "
+            "threat instead of taking the claim at face value."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "indicator": {
+                    "type": "string",
+                    "description": "The IP, domain, URL, or file hash to check.",
+                }
+            },
+            "required": ["indicator"],
+        },
+    },
+}
+
+
 async def execute_tool(name: str, args: dict) -> str:
     if name == "read_channel":
         channel_name = str(args.get("channel_name", "")).lstrip("#").lower()
@@ -214,6 +242,11 @@ async def execute_tool(name: str, args: dict) -> str:
         if not ticker:
             return "No ticker given."
         return await get_uw_snapshot(ticker)
+    if name == "check_threat_indicator":
+        indicator = str(args.get("indicator", "")).strip()
+        if not indicator:
+            return "No indicator given."
+        return await check_indicator(indicator)
     return f"Unknown tool: {name}"
 
 
@@ -601,7 +634,11 @@ OTHER_PERSONAS_NOTE = (
     "time. You also have a get_unusual_whales_data tool with real options "
     "flow, dark pool, and GEX data for a ticker from the user's own account "
     "- use it when you actually need to know WHY a stock is moving, not "
-    "just what it is."
+    "just what it is. You also have a check_threat_indicator tool that "
+    "checks a real IP, domain, URL, or file hash against Shodan, "
+    "VirusTotal, urlscan.io, ThreatFox, MalwareBazaar, URLhaus, YARAify, "
+    "and Feodo Tracker - use it on an actual indicator from an IOC dump or "
+    "research post instead of taking the claim at face value."
 )
 
 
@@ -642,7 +679,7 @@ async def get_reply(persona_key: str, prompt: str):
             reply = await chat(
                 system_prompt_for(persona_key),
                 prompt,
-                tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL, TICKER_TOOL, UW_TOOL],
+                tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL, TICKER_TOOL, UW_TOOL, THREAT_INTEL_TOOL],
                 tool_executor=execute_tool,
             )
             print(f"[chat] got reply: {reply!r}", flush=True)
