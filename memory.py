@@ -59,17 +59,17 @@ def init_meta_db():
 _meta_conn = init_meta_db()
 
 
-def seconds_since_last_ping() -> float:
-    row = _meta_conn.execute("SELECT value FROM meta WHERE key = 'last_ping_ts'").fetchone()
+def seconds_since_last_ping(tier: str = "default") -> float:
+    row = _meta_conn.execute("SELECT value FROM meta WHERE key = ?", (f"last_ping_ts:{tier}",)).fetchone()
     if not row:
         return float("inf")
     return time.time() - float(row[0])
 
 
-def record_ping():
+def record_ping(tier: str = "default"):
     _meta_conn.execute(
-        "INSERT INTO meta (key, value) VALUES ('last_ping_ts', ?) "
+        "INSERT INTO meta (key, value) VALUES (?, ?) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        (str(time.time()),),
+        (f"last_ping_ts:{tier}", str(time.time())),
     )
     _meta_conn.commit()

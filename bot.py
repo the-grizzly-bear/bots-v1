@@ -339,36 +339,56 @@ async def maybe_synthesize(transcript_lines: list, typing_channel: discord.TextC
 
 
 ESCALATION_SYSTEM_PROMPT = (
-    "You are a neutral filter deciding whether a user should be personally "
+    "You are a neutral filter classifying how urgently a user should be "
     "notified about something. You are not a persona - be terse and objective."
 )
+
+# Tier -> (role env var, cooldown seconds). Lower tiers are meant to fire
+# more often (they're muteable per-role in Discord, unlike a direct ping),
+# so they get a shorter cooldown; CRITICAL/HIGH should be rare by
+# classification already, but keep a real cooldown as a burst backstop.
+ESCALATION_TIERS = {
+    "CRITICAL": ("ROLE_CRITICAL", 300),
+    "HIGH": ("ROLE_HIGH", 600),
+    "MEDIUM": ("ROLE_MEDIUM", 1200),
+    "LOW": ("ROLE_LOW", 1800),
+    "INFO": ("ROLE_INFO", 1800),
+}
+
 ESCALATION_PROMPT_TEMPLATE = (
     "Your group of personas just had this discussion reacting to something:\n\n"
     "{transcript}\n\n"
-    "Decide whether to personally notify the user right now. Judge ONLY two "
-    "things: (1) does this directly concern something the user actually "
-    "runs - " + ", ".join(MY_STACK) + " - in a way that needs THEIR action "
-    "soon (an active exploit, a breach, an outage, a critical patch), or "
-    "(2) is this a rare, unambiguous global emergency (a large-scale active "
-    "exploit spreading right now, critical infrastructure failure) that "
-    "anyone would want to know about immediately regardless of their stack. "
-    "If neither applies, the answer is NO, even if the news sounds "
-    "significant, dramatic, or consequential in the abstract.\n\n"
-    "Do NOT escalate for: general financial market moves, company pricing "
-    "decisions, macroeconomic commentary, geopolitical statements or "
-    "diplomacy, political or legal rulings, or general AI-industry news - "
-    "none of these need the user's action just because they're notable. "
+    "Classify how urgently this deserves a role ping, from these tiers "
+    "(most to least severe): CRITICAL, HIGH, MEDIUM, LOW, INFO, or NONE if "
+    "it doesn't deserve any ping at all beyond the normal discussion.\n\n"
+    "- CRITICAL: an active exploit or breach against something the user "
+    "actually runs - " + ", ".join(MY_STACK) + " - or an unambiguous, "
+    "rare global emergency (large-scale active exploit spreading right now, "
+    "critical infrastructure failure) that demands attention immediately.\n"
+    "- HIGH: directly concerns the user's own stack and needs their "
+    "attention soon, but isn't actively being exploited against them right now.\n"
+    "- MEDIUM: genuinely significant industry news, not stack-specific, "
+    "worth real attention but nothing to act on.\n"
+    "- LOW: a minor, stack-unrelated heads-up - worth a passing note, "
+    "nothing more.\n"
+    "- INFO: mildly noteworthy at most - logged for the record, not "
+    "something anyone needs to see immediately.\n"
+    "- NONE: routine. This is most items. Use this whenever in doubt.\n\n"
+    "Do NOT rate general financial market moves, company pricing decisions, "
+    "macroeconomic commentary, geopolitical statements or diplomacy, "
+    "political or legal rulings, or general AI-industry news above LOW/INFO "
+    "just because they're notable - none of these need urgent attention. "
     "Journalistic phrasing like 'could significantly impact', 'raising "
     "concerns', or 'signals a shift' appears in nearly all news writing and "
     "is not itself a signal of urgency - judge the actual content, not the "
     "tone it's reported in. Also ignore how much discussion or disagreement "
     "this generated - a heated debate over a trivial detail is not a reason "
-    "to escalate. When in doubt, don't - the user can always ask.\n\n"
-    "Reply with exactly 'NO' if not worth pinging, or 'YES: <BLUF/TL;DR - the "
-    "bottom line first, one tight sentence, no preamble, no hedging, just the "
-    "single most important fact and why it matters right now>' if it is."
+    "to rate it higher.\n\n"
+    "Reply with exactly 'NONE' if nothing is warranted, or "
+    "'<TIER>: <BLUF/TL;DR - the bottom line first, one tight sentence, no "
+    "preamble, no hedging, just the single most important fact and why it "
+    "matters>' otherwise, using one of the five tier names above."
 )
-ESCALATION_COOLDOWN_SECONDS = 600  # don't ping more than once per ~10 minutes
 ESCALATION_PERSONA_KEY = "analyst"  # ping goes out in this persona's voice
 
 # A burst of separate stories triggers many concurrent maybe_escalate() calls.
@@ -382,32 +402,41 @@ _escalation_lock = asyncio.Lock()
 async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextChannel):
     """One consolidated judgment call over the WHOLE discussion, made after
     everyone's reacted - not left to any single persona to decide on its own
-    mid-reaction, which was pinging way too eagerly and too often. Also
-    cooldown-limited so a burst of separate stories can't fire off several
-    pings back to back, and delivered through a persona's own voice/webhook
-    rather than the bare bot account."""
-    if not DISCORD_USER_ID or len(transcript_lines) <= 1:
+    mid-reaction, which was pinging way too eagerly and too often. Classifies
+    into a severity tier (role ping) rather than a single yes/no so the user
+    can mute low tiers per-role in Discord instead of getting every ping at
+    the same volume. Delivered through a persona's own voice/webhook rather
+    than the bare bot account."""
+    if len(transcript_lines) <= 1:
         return
     async with _escalation_lock:
-        if seconds_since_last_ping() < ESCALATION_COOLDOWN_SECONDS:
-            print("[escalate] skipped, still in cooldown", flush=True)
-            return
         try:
             verdict = await chat(ESCALATION_SYSTEM_PROMPT, ESCALATION_PROMPT_TEMPLATE.format(transcript="\n".join(transcript_lines)))
         except Exception as e:
             print(f"[escalate] failed: {e!r}", flush=True)
             return
         verdict = (verdict or "").strip()
-        if not verdict.upper().startswith("YES"):
+        tier = verdict.split(":", 1)[0].strip().upper()
+        if tier not in ESCALATION_TIERS:
             print(f"[escalate] no ping warranted: {verdict!r}", flush=True)
             return
+
+        role_env, cooldown = ESCALATION_TIERS[tier]
+        if seconds_since_last_ping(tier) < cooldown:
+            print(f"[escalate] {tier} skipped, still in cooldown", flush=True)
+            return
+        role_id = os.environ.get(role_env)
+        if not role_id:
+            print(f"[escalate] {tier} verdict but {role_env} not set, skipping ping", flush=True)
+            return
+
         reason = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
-        print(f"[escalate] pinging user via {ESCALATION_PERSONA_KEY}: {reason}", flush=True)
-        ok = await post_reply(ESCALATION_PERSONA_KEY, f"<@{DISCORD_USER_ID}> {reason}")
+        print(f"[escalate] pinging {tier} via {ESCALATION_PERSONA_KEY}: {reason}", flush=True)
+        ok = await post_reply(ESCALATION_PERSONA_KEY, f"<@&{role_id}> {reason}")
         if ok:
-            record_ping()
+            record_ping(tier)
         else:
-            print("[escalate] failed to send ping", flush=True)
+            print(f"[escalate] failed to send {tier} ping", flush=True)
 
 
 async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord.TextChannel, passive_note: str = WATCH_NOTE, should_escalate: bool = False):
