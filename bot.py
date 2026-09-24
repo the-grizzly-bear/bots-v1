@@ -848,9 +848,19 @@ def system_prompt_for(persona_key: str) -> str:
     return identity + persona["system_prompt"] + "\n\n" + OTHER_PERSONAS_NOTE.format(names=others)
 
 
-_NON_LATIN_SCRIPT_RE = re.compile(
-    r"[一-鿿぀-ヿ가-힯Ѐ-ӿ؀-ۿ]"
-)
+# Was a blocklist of specific non-Latin ranges (CJK/Hiragana/Hangul/
+# Cyrillic/Arabic) - missed a live Thai drift completely (Athena posted a
+# full Thai-language reply, totally undetected) since Thai wasn't in the
+# list. A blocklist only ever catches scripts someone thought to add after
+# already getting burned once. Inverted instead: define what Latin-script
+# text looks like (covers accented European letters - café, Müller, etc.
+# are fine) and flag any alphabetic character that ISN'T that, so any
+# non-Latin script is caught automatically, not just ones seen failing before.
+_LATIN_LETTER_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ſ]")
+
+
+def _is_non_latin_letter(ch: str) -> bool:
+    return ch.isalpha() and not _LATIN_LETTER_RE.match(ch)
 
 
 def _is_mostly_non_english(text: str) -> bool:
@@ -868,7 +878,7 @@ def _is_mostly_non_english(text: str) -> bool:
     # under the old gate, so they posted uncaught. This domain never
     # legitimately needs CJK/Cyrillic/Arabic script, so any real occurrence
     # (not just a stray directional-mark false positive) is treated as drift.
-    return len(_NON_LATIN_SCRIPT_RE.findall(text)) >= 3
+    return sum(1 for c in letters if _is_non_latin_letter(c)) >= 3
 
 
 async def get_reply(persona_key: str, prompt: str):
@@ -943,9 +953,28 @@ def clean_reply(reply: str, own_name: str = None) -> str:
     # this when non-Latin makes up >20% of the WHOLE reply, so one stray
     # foreign word on an otherwise-long English sentence slips past it -
     # strip it here the same way the camelCase lead-in token is stripped.
-    reply = re.sub(
-        rf"^\s*[{_NON_LATIN_SCRIPT_RE.pattern[1:-1]}]+[,:;]?\s*", "", reply
-    )
+    # Done as a manual scan rather than embedding the script check in a
+    # regex char class, since _is_non_latin_letter is now a Python
+    # predicate (an allowlist inversion), not a fixed set of ranges.
+    i, n = 0, len(reply)
+    while i < n and reply[i].isspace():
+        i += 1
+    start = i
+    # Consume anything that isn't whitespace/terminator/Latin/digit - not
+    # just "is a non-Latin letter", since combining marks (Thai vowel signs
+    # etc.) aren't str.isalpha() but still belong to the same garbled token
+    # and would otherwise get left behind as residue.
+    while (
+        i < n and not reply[i].isspace() and reply[i] not in ",:;"
+        and not _LATIN_LETTER_RE.match(reply[i]) and not reply[i].isdigit()
+    ):
+        i += 1
+    if i > start:
+        if i < n and reply[i] in ",:;":
+            i += 1
+        while i < n and reply[i] == " ":
+            i += 1
+        reply = reply[i:]
     # Same degeneration, milder form: a garbled camelCase-looking lead-in
     # token before a colon with no JSON block attached (e.g. "sourceMapping:
     # <real reply>", "iNdEx: <real reply>") - real English words never have
