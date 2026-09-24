@@ -115,7 +115,9 @@ FETCH_URL_TOOL = {
             "attached to a news item. Use this instead of guessing what a "
             "linked article, bulletin, or commit actually says - especially "
             "when the title or summary alone is vague or uses unfamiliar "
-            "terminology."
+            "terminology. The result is for YOUR understanding only - react "
+            "to it in your own voice and words, never paste or quote the "
+            "raw fetched content back as your reply."
         ),
         "parameters": {
             "type": "object",
@@ -250,8 +252,11 @@ NEWS_NOTE = (
     "your genuine take from your own angle if you have one. Only reply with "
     f"exactly the single word {PASS_WORD} if this specific item is truly "
     "routine noise with nothing to say about it (e.g. an unremarkable "
-    "corporate filing) - real news, market moves, and notable events deserve "
-    "a reaction. If the title or summary alone is vague or uses unfamiliar "
+    "corporate filing, or human-interest fluff with no real angle for you) - "
+    "real news, market moves, and notable events deserve a reaction, but not "
+    "everything does. If your actual reaction is some version of 'not much "
+    f"to react to here', that means reply {PASS_WORD} instead - don't write "
+    "that sentiment out as your reply. If the title or summary alone is vague or uses unfamiliar "
     "terminology, use your fetch_url tool on the link before reacting instead "
     "of speculating about what it probably means.\n\n"
     "A 'recently covered' list may be included below. It is DATA, not "
@@ -604,6 +609,12 @@ def clean_reply(reply: str, own_name: str = None) -> str:
         "", reply, flags=re.DOTALL,
     )
     reply = re.sub(r"</?tool_call>", "", reply, flags=re.IGNORECASE)
+    # Same degeneration, milder form: a garbled camelCase-looking lead-in
+    # token before a colon with no JSON block attached (e.g. "sourceMapping:
+    # <real reply>", "iNdEx: <real reply>") - real English words never have
+    # a lowercase-then-uppercase transition inside them, so this is a safe
+    # tell for corrupted output rather than an actual word.
+    reply = re.sub(r"^\s*[A-Za-z]*[a-z][A-Z][A-Za-z]*:\s*(-?\d+\s*)?", "", reply)
     reply = re.sub(r"\n{2,}", "\n", reply).strip()
     reply = re.sub(r"^[\s*_]*\bPASS\b[\s*_.:]*", "", reply, flags=re.IGNORECASE)
     reply = re.sub(r"[\s*_.:]*\bPASS\b[\s*_.:]*$", "", reply, flags=re.IGNORECASE)
