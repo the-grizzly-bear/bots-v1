@@ -763,6 +763,8 @@ async def get_reply(persona_key: str, prompt: str):
                 if attempt == 0:
                     continue
                 return None
+            if _ends_with_pass(reply):
+                return PASS_WORD
             return clean_reply(reply, own_name=PERSONAS[persona_key]["name"])
         except Exception as e:
             print(f"[chat] failed for persona {persona_key}: {e!r}", flush=True)
@@ -772,6 +774,20 @@ async def get_reply(persona_key: str, prompt: str):
 def _is_pass_line(line: str) -> bool:
     stripped = re.sub(r"[^A-Za-z]", "", line).upper()
     return stripped == PASS_WORD
+
+
+def _ends_with_pass(reply: str) -> bool:
+    """THINK_FIRST tells personas to show only their final conclusion, not
+    the reasoning behind it - but the model often leaks the reasoning
+    anyway and lands on a bare PASS as the actual last word. That trailing
+    PASS is the real verdict; the paragraph before it was never meant to be
+    posted on its own, so this has to be checked on the raw reply, before
+    clean_reply() quietly strips the trailing PASS and leaves the leaked
+    reasoning looking like real content."""
+    text = re.sub(r"[*_]", "", reply).strip()  # drop markdown emphasis wrapping first
+    tail = re.sub(r"[\s>\"'.:;-]+$", "", text)
+    match = re.search(r"(?:^|[\s:\-])([A-Za-z]+)$", tail)
+    return bool(match) and match.group(1).upper() == PASS_WORD
 
 
 def clean_reply(reply: str, own_name: str = None) -> str:
