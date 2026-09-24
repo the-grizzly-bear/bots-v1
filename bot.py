@@ -686,6 +686,13 @@ def clean_reply(reply: str, own_name: str = None) -> str:
     # a lowercase-then-uppercase transition inside them, so this is a safe
     # tell for corrupted output rather than an actual word.
     reply = re.sub(r"^\s*[A-Za-z]*[a-z][A-Z][A-Za-z]*:\s*(-?\d+\s*)?", "", reply)
+    # Same tell, but sometimes the ENTIRE reply is just the bare garbled
+    # token with nothing else at all (e.g. reply == "iNdEx") - no colon to
+    # anchor on, so check the whole trimmed reply rather than just a prefix.
+    # Anchored to the FULL string (not just a leading word) so this can't
+    # strip a real word that happens to open a real sentence.
+    if re.fullmatch(r"[A-Za-z]*[a-z][A-Z][A-Za-z]*", reply.strip()):
+        reply = ""
     reply = re.sub(r"\n{2,}", "\n", reply).strip()
     reply = re.sub(r"^[\s*_]*\bPASS\b[\s*_.:]*", "", reply, flags=re.IGNORECASE)
     reply = re.sub(r"[\s*_.:]*\bPASS\b[\s*_.:]*$", "", reply, flags=re.IGNORECASE)
