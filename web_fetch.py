@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import ipaddress
+import os
 import re
 import socket
 import time
@@ -12,6 +14,16 @@ MAX_CONTENT_CHARS = 4000
 MAX_RESPONSE_BYTES = 5_000_000  # 5MB - refuse to buffer a huge/decompression-bomb response
 MAX_REDIRECTS = 5
 CACHE_TTL = 120
+
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
+VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "qwen2.5vl:7b")
+VISION_TIMEOUT = 60
+VISION_PROMPT = (
+    "Describe this image factually: transcribe any visible text exactly, "
+    "note any charts/numbers/data, and describe the key subject. Be "
+    "concise but complete - this description is the only way anyone else "
+    "will know what's in the image."
+)
 
 # Every persona reacting to the same item independently calls fetch_url on
 # the same link (up to 7x per item in practice) - this cache collapses those
@@ -74,6 +86,24 @@ def _html_to_text(html: str) -> str:
         if og_text:
             return og_text
     return text
+
+
+async def _describe_image(image_bytes: bytes, url: str) -> str:
+    """Route image bytes to a vision model instead of refusing them outright -
+    personas otherwise have no way to know what a chart, screenshot, or
+    diagram in a linked post actually shows."""
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    try:
+        async with httpx.AsyncClient(timeout=VISION_TIMEOUT) as client:
+            resp = await client.post(OLLAMA_URL, json={
+                "model": VISION_MODEL,
+                "messages": [{"role": "user", "content": VISION_PROMPT, "images": [b64]}],
+                "stream": False,
+            })
+            resp.raise_for_status()
+            return resp.json()["message"]["content"].strip()
+    except Exception as e:
+        return f"Error describing image at {url}: {e}"
 
 
 def _is_safe_url(url: str) -> tuple[bool, str]:
@@ -162,13 +192,16 @@ async def _fetch_url_uncached(url: str) -> str:
                         body += chunk
                         if len(body) > MAX_RESPONSE_BYTES:
                             return f"Response from {url} exceeded {MAX_RESPONSE_BYTES} bytes, refusing to read further."
-                    raw_text = body.decode(resp.encoding or "utf-8", errors="replace")
                     break
             else:
                 return f"Too many redirects fetching {url}."
     except Exception as e:
         return f"Error fetching {url}: {e}"
 
+    if content_type.startswith("image/"):
+        return await _describe_image(body, url)
+
+    raw_text = body.decode(resp.encoding or "utf-8", errors="replace")
     if "html" in content_type:
         text = _html_to_text(raw_text)
     elif "text/plain" in content_type or "json" in content_type or not content_type:
