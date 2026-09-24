@@ -479,11 +479,19 @@ async def maybe_synthesize(transcript_lines: list, typing_channel: discord.TextC
     persona (ablation-tested: personality injection drifts away from
     faithfully reporting what was actually said)."""
     transcript = "\n".join(transcript_lines) + SYNTHESIS_NOTE
-    try:
-        reply = await chat(SYNTHESIS_SYSTEM_PROMPT, transcript)
-    except Exception as e:
-        print(f"[synthesize] failed: {e!r}", flush=True)
-        return
+    reply = None
+    for attempt in range(2):
+        try:
+            reply = await chat(SYNTHESIS_SYSTEM_PROMPT, transcript)
+        except Exception as e:
+            print(f"[synthesize] failed: {e!r}", flush=True)
+            return
+        if reply and _is_mostly_non_english(reply):
+            print(f"[synthesize] non-English script, retrying" if attempt == 0 else "[synthesize] still non-English after retry, dropping", flush=True)
+            if attempt == 0:
+                continue
+            return
+        break
     reply = clean_reply(reply)
     if is_pass(reply):
         print("[synthesize] nothing to wrap up", flush=True)
@@ -738,8 +746,13 @@ def _is_mostly_non_english(text: str) -> bool:
     letters = re.findall(r"\w", text, flags=re.UNICODE)
     if len(letters) < 10:
         return False
-    non_latin = len(_NON_LATIN_SCRIPT_RE.findall(text))
-    return non_latin / len(letters) > 0.2
+    # A 20%-of-whole-reply threshold sounds safe but two real production
+    # leaks ("Александреску, that means...", and a Sage synthesis with one
+    # Chinese sentence glued onto an English one) both landed around 15% -
+    # under the old gate, so they posted uncaught. This domain never
+    # legitimately needs CJK/Cyrillic/Arabic script, so any real occurrence
+    # (not just a stray directional-mark false positive) is treated as drift.
+    return len(_NON_LATIN_SCRIPT_RE.findall(text)) >= 3
 
 
 async def get_reply(persona_key: str, prompt: str):
