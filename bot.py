@@ -432,6 +432,22 @@ def is_pass(reply: str) -> bool:
     return stripped == PASS_WORD or len(stripped) == 0
 
 
+# The model is told "if your reaction is basically 'nothing here', reply
+# PASS instead" - but it doesn't reliably follow that meta-instruction, so
+# multiple personas independently write near-identical filler ("doesn't
+# provide actionable data", "no real market impact") instead of passing.
+# This catches that pattern in code: once one persona has made the "nothing
+# here" point, later personas saying the same thing get suppressed instead
+# of posted, so at most one voice notes an item is a non-event.
+_FILLER_RE = re.compile(
+    r"doesn'?t (provide|contain|offer)|"
+    r"no (actionable|new|specific|significant|concrete) (data|insight|info|"
+    r"details|impact)|lacks concrete|no (direct|real) (market )?impact|"
+    r"just announc|isn'?t actionable|not actionable",
+    re.IGNORECASE,
+)
+
+
 SAGE_NAME = "Sage"
 SAGE_AVATAR_URL = "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/synthesis.png?v=3"
 
@@ -603,10 +619,16 @@ async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord
         candidate_keys = list(PERSONAS.keys())
         raw_replies = await asyncio.gather(*(get_reply(k, prompt + passive_note) for k in candidate_keys))
         replies = []
+        filler_seen = False
         for key, reply in zip(candidate_keys, raw_replies):
             if is_pass(reply):
                 replies.append(None)
                 continue
+            if _FILLER_RE.search(reply):
+                if filler_seen:
+                    replies.append(None)  # someone already made this "nothing here" point
+                    continue
+                filler_seen = True
             spoken.add(key)
             replies.append(reply if await post_reply(key, reply) else None)
 
