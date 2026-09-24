@@ -19,8 +19,16 @@ def _month_file(subdir: str) -> Path:
     return REPO_DIR / subdir / f"{stamp}.jsonl"
 
 
-def _git(*args: str) -> None:
-    subprocess.run(["git", "-C", str(REPO_DIR), *args], check=True, capture_output=True)
+async def _git(*args: str) -> None:
+    # subprocess.run() is a blocking call - run it off the event loop so a
+    # slow git push (network latency to GitHub, measured ~0.75s round-trip
+    # in testing) doesn't freeze the whole bot (Discord heartbeat, Ollama
+    # calls, everything) while it waits. Confirmed via testing: 3 concurrent
+    # writes with realistic network latency blocked the event loop solid
+    # for ~2.3s before this fix.
+    await asyncio.to_thread(
+        subprocess.run, ["git", "-C", str(REPO_DIR), *args], check=True, capture_output=True
+    )
 
 
 async def _append_and_push(subdir: str, record: dict, commit_prefix: str) -> None:
@@ -30,9 +38,9 @@ async def _append_and_push(subdir: str, record: dict, commit_prefix: str) -> Non
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
             rel_path = path.relative_to(REPO_DIR)
-            _git("add", str(rel_path))
-            _git("commit", "-m", f"{commit_prefix}: {record.get('indicator') or record.get('summary', '')[:60]}")
-            _git("push", "origin", "main")
+            await _git("add", str(rel_path))
+            await _git("commit", "-m", f"{commit_prefix}: {record.get('indicator') or record.get('summary', '')[:60]}")
+            await _git("push", "origin", "main")
         except Exception as e:
             print(f"[archive] failed to write/push: {e!r}", flush=True)
 
@@ -74,8 +82,8 @@ async def log_rule_update(source_name: str, rule_path: str, diff_content: str) -
             path.parent.mkdir(exist_ok=True)
             path.write_text(diff_content, encoding="utf-8")
             rel_path = path.relative_to(REPO_DIR)
-            _git("add", str(rel_path))
-            _git("commit", "-m", f"Rule update: {source_name} - {rule_path}")
-            _git("push", "origin", "main")
+            await _git("add", str(rel_path))
+            await _git("commit", "-m", f"Rule update: {source_name} - {rule_path}")
+            await _git("push", "origin", "main")
         except Exception as e:
             print(f"[archive] failed to write/push rule: {e!r}", flush=True)

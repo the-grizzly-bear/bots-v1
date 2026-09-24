@@ -22,8 +22,12 @@ def _day_file() -> Path:
     return REPO_DIR / "raw" / f"{stamp}.jsonl"
 
 
-def _git(*args: str) -> None:
-    subprocess.run(["git", "-C", str(REPO_DIR), *args], check=True, capture_output=True)
+async def _git(*args: str) -> None:
+    # See archive.py's _git() for why this runs off the event loop - same
+    # blocking-subprocess-over-network issue applies here too.
+    await asyncio.to_thread(
+        subprocess.run, ["git", "-C", str(REPO_DIR), *args], check=True, capture_output=True
+    )
 
 
 async def log_raw_post(channel_name: str, author: str, content: str) -> None:
@@ -51,8 +55,9 @@ async def _flush() -> None:
         if not _pending:
             return
         try:
-            _git("add", "raw/")
-            status = subprocess.run(
+            await _git("add", "raw/")
+            status = await asyncio.to_thread(
+                subprocess.run,
                 ["git", "-C", str(REPO_DIR), "status", "--porcelain"],
                 capture_output=True, text=True, check=True,
             )
@@ -60,8 +65,8 @@ async def _flush() -> None:
                 _pending = False
                 return
             count = len(status.stdout.strip().splitlines())
-            _git("commit", "-m", f"Raw capture batch ({time.strftime('%Y-%m-%d %H:%M UTC')})")
-            _git("push", "origin", "main")
+            await _git("commit", "-m", f"Raw capture batch ({time.strftime('%Y-%m-%d %H:%M UTC')})")
+            await _git("push", "origin", "main")
             print(f"[raw_archive] flushed batch, {count} file(s) changed", flush=True)
             _pending = False
         except Exception as e:
