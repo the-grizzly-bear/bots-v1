@@ -7,7 +7,8 @@ import time
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "data" / "memory.db"
-RECENT_LIMIT = 15
+RECENT_LIMIT = 10
+RECAP_CHARS = 90
 
 
 def init_db():
@@ -44,7 +45,7 @@ def recent_context(limit: int = RECENT_LIMIT) -> str:
     ).fetchall()
     if not rows:
         return ""
-    lines = [f"#{channel}: {summary}" for channel, summary in reversed(rows)]
+    lines = [f"#{channel}: {summary[:RECAP_CHARS]}" for channel, summary in reversed(rows)]
     return "--- recently covered, don't react fresh to these again ---\n" + "\n".join(lines)
 
 

@@ -44,7 +44,9 @@ async def chat(system_prompt: str, user_message: str, tools=None, tool_executor=
                     for call in tool_calls:
                         fn = call["function"]["name"]
                         args = call["function"].get("arguments", {})
+                        print(f"[tool] calling {fn}({args})", flush=True)
                         result = await tool_executor(fn, args)
+                        print(f"[tool] {fn} -> {str(result)[:200]!r}", flush=True)
                         messages.append({"role": "tool", "content": str(result)})
                     continue
 

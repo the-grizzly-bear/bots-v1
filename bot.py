@@ -1,16 +1,18 @@
 import asyncio
 import os
 import re
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import discord
 
-from personas import PERSONAS, STACK_RELEVANCE_NOTE
+from personas import PERSONAS, STACK_RELEVANCE_NOTE, MY_STACK
 from ollama_chat import chat
 from poster import post_to_webhook
 from memory import remember, recent_context, seconds_since_last_ping, record_ping
+from web_fetch import fetch_url_content
 
 DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 INTERACTIVE_CHANNEL_ID = int(os.environ["INTERACTIVE_CHANNEL_ID"])
@@ -34,7 +36,22 @@ watched_channel_ids = set()  # populated on_ready
 interactive_channel = None  # populated on_ready
 
 
+DISCORD_TIMESTAMP_RE = re.compile(r"<t:(\d+):[a-zA-Z]>")
+
+
+def _replace_discord_timestamp(match: re.Match) -> str:
+    try:
+        dt = datetime.fromtimestamp(int(match.group(1)), tz=timezone.utc)
+        return dt.strftime("%Y-%m-%d %H:%M UTC")
+    except (ValueError, OverflowError):
+        return match.group(0)
+
+
 def format_message_content(msg: discord.Message) -> str:
+    # Discord's own <t:UNIX:FLAG> timestamp markup, left raw, was confusing
+    # the model's generation (it garbled into corrupted fragments like
+    # 'iNdEx:1790220909:t>' mid-reply) - spelling it out as plain text avoids
+    # feeding the model syntax it was never meant to parse.
     parts = []
     if msg.content:
         parts.append(msg.content)
@@ -45,7 +62,7 @@ def format_message_content(msg: discord.Message) -> str:
             parts.append(embed.description)
         for field in embed.fields:
             parts.append(f"{field.name}: {field.value}")
-    return " | ".join(parts)
+    return DISCORD_TIMESTAMP_RE.sub(_replace_discord_timestamp, " | ".join(parts))
 
 
 def find_mentioned_personas(text: str, exclude: set):
@@ -89,19 +106,49 @@ READ_CHANNEL_TOOL = {
 }
 
 
+FETCH_URL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "fetch_url",
+        "description": (
+            "Fetch and read the actual text content of a URL, such as a link "
+            "attached to a news item. Use this instead of guessing what a "
+            "linked article, bulletin, or commit actually says - especially "
+            "when the title or summary alone is vague or uses unfamiliar "
+            "terminology."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The exact URL to fetch, taken from the text you were given.",
+                }
+            },
+            "required": ["url"],
+        },
+    },
+}
+
+
 async def execute_tool(name: str, args: dict) -> str:
-    if name != "read_channel":
-        return f"Unknown tool: {name}"
-    channel_name = str(args.get("channel_name", "")).lstrip("#").lower()
-    ch = channel_name_to_obj.get(channel_name)
-    if not ch:
-        return f"No channel named '{channel_name}' found in this server."
-    try:
-        return await fetch_channel_context(ch)
-    except discord.Forbidden:
-        return f"No permission to read #{channel_name}."
-    except Exception as e:
-        return f"Error reading #{channel_name}: {e}"
+    if name == "read_channel":
+        channel_name = str(args.get("channel_name", "")).lstrip("#").lower()
+        ch = channel_name_to_obj.get(channel_name)
+        if not ch:
+            return f"No channel named '{channel_name}' found in this server."
+        try:
+            return await fetch_channel_context(ch)
+        except discord.Forbidden:
+            return f"No permission to read #{channel_name}."
+        except Exception as e:
+            return f"Error reading #{channel_name}: {e}"
+    if name == "fetch_url":
+        url = str(args.get("url", "")).strip()
+        if not url:
+            return "No URL given."
+        return await fetch_url_content(url)
+    return f"Unknown tool: {name}"
 
 
 def resolve_channel_mentions(message: discord.Message) -> str:
@@ -161,7 +208,14 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
 async def on_message(message: discord.Message):
     print(f"[on_message] channel={message.channel.id} author={message.author} bot={message.author.bot} content={message.content!r}", flush=True)
 
-    if message.channel.id in watched_channel_ids:
+    # Checking the channel's own name (always available on the message
+    # itself) instead of relying solely on the watched_channel_ids cache
+    # avoids a startup race: messages can be dispatched via on_message
+    # before on_ready finishes populating that cache, which was silently
+    # dropping the first few news items after every restart.
+    channel_name = getattr(message.channel, "name", None)
+    if message.channel.id in watched_channel_ids or (channel_name and channel_name.lower() in WATCHED_CHANNEL_NAMES):
+        watched_channel_ids.add(message.channel.id)
         await handle_watched_post(message)
         return
 
@@ -197,20 +251,23 @@ NEWS_NOTE = (
     f"exactly the single word {PASS_WORD} if this specific item is truly "
     "routine noise with nothing to say about it (e.g. an unremarkable "
     "corporate filing) - real news, market moves, and notable events deserve "
-    "a reaction.\n\n"
+    "a reaction. If the title or summary alone is vague or uses unfamiliar "
+    "terminology, use your fetch_url tool on the link before reacting instead "
+    "of speculating about what it probably means.\n\n"
     "Check the link's domain BEFORE reacting to the content. If it's an "
     "obvious placeholder or test domain (example.com, test.com, foo.bar, or "
     "similar generic/fake-looking domains), don't analyze the content as if "
     "it were genuine - call that out instead, but in your own voice like "
     "everything else you say, not a stock phrase everyone would say "
     "identically.\n\n"
-    "If a 'recently covered' list is included below, it exists ONLY to check "
-    f"whether THIS SAME story was already posted - if so, reply {PASS_WORD} "
-    "instead of repeating a fresh take. That list is not general background "
-    "and not related context - it's a separate, different set of past "
-    "stories. Never reference, compare to, blend in, or discuss anything "
-    "from that list unless the current item is actually the same story. "
-    "Stay entirely on the current item above. Never mention, quote, tag, or "
+    "A 'recently covered' list may be included below. It is DATA, not "
+    f"content. Its ONLY purpose: check whether THIS SAME story already ran - "
+    f"if so, reply {PASS_WORD}. You may NEVER summarize it, report on it, "
+    "pull facts from it, or mention any story in it, even if the current "
+    f"item is boring and the list looks more interesting. If the current "
+    f"item alone has nothing worth saying, that means {PASS_WORD} - it does "
+    "NOT mean 'talk about the list instead.' Stay entirely on the current "
+    "item above. Never mention, quote, tag, or "
     "cite the list itself in your actual reply. Your reply should read like "
     "natural speech: no headers, no tags, no bullet-point source lists, no "
     f"markdown formatting around {PASS_WORD} itself."
@@ -235,7 +292,7 @@ def is_pass(reply: str) -> bool:
 
 
 SAGE_NAME = "Sage"
-SAGE_AVATAR_URL = "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/synthesis.png"
+SAGE_AVATAR_URL = "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/synthesis.png?v=2"
 
 SYNTHESIS_SYSTEM_PROMPT = (
     "You are a neutral summarizer. Terse, objective, no personality, no "
@@ -288,12 +345,25 @@ ESCALATION_SYSTEM_PROMPT = (
 ESCALATION_PROMPT_TEMPLATE = (
     "Your group of personas just had this discussion reacting to something:\n\n"
     "{transcript}\n\n"
-    "Judge ONLY the real-world importance of the underlying content - never "
-    "how much discussion or disagreement it generated. A heated debate over "
-    "a trivial detail (a typo, a doc wording change, routine maintenance) is "
-    "NOT a reason to escalate. Only escalate for something genuinely urgent "
-    "or high-stakes: an active exploit, a major breach, something requiring "
-    "action soon. When in doubt, don't escalate - the user can always ask.\n\n"
+    "Decide whether to personally notify the user right now. Judge ONLY two "
+    "things: (1) does this directly concern something the user actually "
+    "runs - " + ", ".join(MY_STACK) + " - in a way that needs THEIR action "
+    "soon (an active exploit, a breach, an outage, a critical patch), or "
+    "(2) is this a rare, unambiguous global emergency (a large-scale active "
+    "exploit spreading right now, critical infrastructure failure) that "
+    "anyone would want to know about immediately regardless of their stack. "
+    "If neither applies, the answer is NO, even if the news sounds "
+    "significant, dramatic, or consequential in the abstract.\n\n"
+    "Do NOT escalate for: general financial market moves, company pricing "
+    "decisions, macroeconomic commentary, geopolitical statements or "
+    "diplomacy, political or legal rulings, or general AI-industry news - "
+    "none of these need the user's action just because they're notable. "
+    "Journalistic phrasing like 'could significantly impact', 'raising "
+    "concerns', or 'signals a shift' appears in nearly all news writing and "
+    "is not itself a signal of urgency - judge the actual content, not the "
+    "tone it's reported in. Also ignore how much discussion or disagreement "
+    "this generated - a heated debate over a trivial detail is not a reason "
+    "to escalate. When in doubt, don't - the user can always ask.\n\n"
     "Reply with exactly 'NO' if not worth pinging, or 'YES: <BLUF/TL;DR - the "
     "bottom line first, one tight sentence, no preamble, no hedging, just the "
     "single most important fact and why it matters right now>' if it is."
@@ -429,7 +499,10 @@ OTHER_PERSONAS_NOTE = (
     "Stay in your own voice - don't speak for them.\n\n"
     "You have a read_channel tool that fetches real, current messages from any "
     "channel in this server by name. Use it whenever someone references a "
-    "specific channel - never guess or invent what a channel might contain."
+    "specific channel - never guess or invent what a channel might contain. "
+    "You also have a fetch_url tool that reads the actual content of a link "
+    "you've been given - use it instead of guessing what an article or "
+    "commit says from its title alone."
 )
 
 
@@ -440,14 +513,19 @@ def system_prompt_for(persona_key: str) -> str:
     return identity + persona["system_prompt"] + "\n\n" + OTHER_PERSONAS_NOTE.format(names=others)
 
 
-async def get_reply(persona_key: str, prompt: str, use_tools: bool = False):
+async def get_reply(persona_key: str, prompt: str):
+    # Tools are always passed, never conditional - the system prompt
+    # (OTHER_PERSONAS_NOTE) unconditionally tells every persona it has these
+    # tools, so leaving them unwired for some calls made the model type out
+    # a fake 'fetch_url(...)' as plain text instead of a real tool call, with
+    # no real result to ground the reply.
     try:
         print(f"[chat] calling ollama for {persona_key}...", flush=True)
         reply = await chat(
             system_prompt_for(persona_key),
             prompt,
-            tools=[READ_CHANNEL_TOOL] if use_tools else None,
-            tool_executor=execute_tool if use_tools else None,
+            tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL],
+            tool_executor=execute_tool,
         )
         print(f"[chat] got reply: {reply!r}", flush=True)
         return clean_reply(reply, own_name=PERSONAS[persona_key]["name"])
@@ -470,8 +548,18 @@ def clean_reply(reply: str, own_name: str = None) -> str:
     self-labeled 'Name: ' prefix leaked from the transcript format."""
     if not reply:
         return reply
+    # Defensive backstop: the model occasionally types out a fake tool call
+    # as plain text instead of a real structured tool_calls entry (garbled
+    # lead-in token, a {"name": ..., "arguments": {...}} block, sometimes a
+    # literal </tool_call> tag) - strip that garbage rather than post it.
+    reply = re.sub(
+        r'(?:(?<=\n)|^)\s*[A-Za-z]{1,15}\s*\n?\{"name":\s*"[a-zA-Z_]+",\s*"arguments":\s*\{.*?\}\}\s*(?:</?tool_call>)?',
+        "", reply, flags=re.DOTALL,
+    )
+    reply = re.sub(r"</?tool_call>", "", reply, flags=re.IGNORECASE)
+    reply = re.sub(r"\n{2,}", "\n", reply).strip()
     reply = re.sub(r"^[\s*_]*\bPASS\b[\s*_.:]*", "", reply, flags=re.IGNORECASE)
-    reply = re.sub(r"[\s*_.:]*\bPASS\b[\s*_]*$", "", reply, flags=re.IGNORECASE)
+    reply = re.sub(r"[\s*_.:]*\bPASS\b[\s*_.:]*$", "", reply, flags=re.IGNORECASE)
     if own_name:
         reply = re.sub(rf"^\s*{re.escape(own_name)}\s*:\s*", "", reply, flags=re.IGNORECASE)
     lines = reply.split("\n")
@@ -509,7 +597,7 @@ async def post_reply(persona_key: str, reply: str):
 
 async def respond_as(persona_key: str, prompt: str, typing_channel: discord.TextChannel):
     async with typing_channel.typing():
-        reply = await get_reply(persona_key, prompt, use_tools=True)
+        reply = await get_reply(persona_key, prompt)
     if reply is None:
         return None
     ok = await post_reply(persona_key, reply)
