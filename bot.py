@@ -7,7 +7,7 @@ load_dotenv()
 
 import discord
 
-from personas import PERSONAS
+from personas import PERSONAS, STACK_RELEVANCE_NOTE
 from ollama_chat import chat
 from poster import post_to_webhook
 from memory import remember, recent_context, seconds_since_last_ping, record_ping
@@ -214,6 +214,7 @@ NEWS_NOTE = (
     "cite the list itself in your actual reply. Your reply should read like "
     "natural speech: no headers, no tags, no bullet-point source lists, no "
     f"markdown formatting around {PASS_WORD} itself."
+    + STACK_RELEVANCE_NOTE
 )
 REACT_NOTE = (
     "\n\nEveryone above just answered independently - none of them had seen "
