@@ -331,7 +331,7 @@ async def handle_watched_post(message: discord.Message):
     if rule_match:
         asyncio.create_task(log_rule_update(message.author.name, rule_match.group(1), text))
 
-    await run_discussion([], prompt, interactive_channel, passive_note=NEWS_NOTE, should_escalate=True)
+    await run_discussion([], prompt, interactive_channel, passive_note=NEWS_NOTE, should_escalate=True, source_link=message.jump_url)
 
 
 @client.event
@@ -614,7 +614,7 @@ ESCALATION_PERSONA_KEY = "analyst"  # ping goes out in this persona's voice
 _escalation_lock = asyncio.Lock()
 
 
-async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextChannel):
+async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextChannel, source_link: str = None):
     """One consolidated judgment call over the WHOLE discussion, made after
     everyone's reacted - not left to any single persona to decide on its own
     mid-reaction, which was pinging way too eagerly and too often. Classifies
@@ -652,7 +652,7 @@ async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextCha
 
         if tier in ("CRITICAL", "HIGH", "MEDIUM"):
             summary = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
-            asyncio.create_task(log_notable(tier, summary))
+            asyncio.create_task(log_notable(tier, summary, message_link=source_link))
 
         role_id = os.environ.get(role_env)
         if not role_id:
@@ -661,14 +661,17 @@ async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextCha
 
         reason = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
         print(f"[escalate] pinging {tier} via {ESCALATION_PERSONA_KEY}: {reason}", flush=True)
-        ok = await post_reply(ESCALATION_PERSONA_KEY, f"<@&{role_id}> {reason}")
+        ping_text = f"<@&{role_id}> {reason}"
+        if source_link:
+            ping_text += f"\n{source_link}"
+        ok = await post_reply(ESCALATION_PERSONA_KEY, ping_text)
         if ok:
             record_ping(tier)
         else:
             print(f"[escalate] failed to send {tier} ping", flush=True)
 
 
-async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord.TextChannel, passive_note: str = WATCH_NOTE, should_escalate: bool = False):
+async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord.TextChannel, passive_note: str = WATCH_NOTE, should_escalate: bool = False, source_link: str = None):
     """If anyone is named, ONLY they respond - no pile-on from everyone else.
     If nobody is named, every persona gets a chance to chime in but defaults
     to passing (PASS_WORD) unless they genuinely have something to add. If a
@@ -754,7 +757,7 @@ async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord
         await maybe_synthesize(transcript_lines, typing_channel)
 
     if should_escalate:
-        await maybe_escalate(transcript_lines, typing_channel)
+        await maybe_escalate(transcript_lines, typing_channel, source_link=source_link)
 
 
 OTHER_PERSONAS_NOTE = (
