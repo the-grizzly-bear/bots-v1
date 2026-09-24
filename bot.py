@@ -292,7 +292,7 @@ def is_pass(reply: str) -> bool:
 
 
 SAGE_NAME = "Sage"
-SAGE_AVATAR_URL = "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/synthesis.png?v=2"
+SAGE_AVATAR_URL = "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/synthesis.png?v=3"
 
 SYNTHESIS_SYSTEM_PROMPT = (
     "You are a neutral summarizer. Terse, objective, no personality, no "
