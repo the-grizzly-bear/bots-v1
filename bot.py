@@ -772,7 +772,7 @@ def clean_reply(reply: str, own_name: str = None) -> str:
     # <real reply>", "iNdEx: <real reply>") - real English words never have
     # a lowercase-then-uppercase transition inside them, so this is a safe
     # tell for corrupted output rather than an actual word.
-    reply = re.sub(r"^\s*[A-Za-z]*[a-z][A-Z][A-Za-z]*:\s*(-?\d+\s*)?", "", reply)
+    reply = re.sub(r"^\s*[A-Za-z]*[a-z][A-Z][A-Za-z]*[:,;]\s*(-?\d+\s*)?", "", reply)
     # Same tell, but sometimes the ENTIRE reply is just the bare garbled
     # token with nothing else at all (e.g. reply == "iNdEx") - no colon to
     # anchor on, so check the whole trimmed reply rather than just a prefix.
