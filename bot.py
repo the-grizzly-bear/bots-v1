@@ -17,7 +17,7 @@ from market_data import get_ticker_context
 from uw_client import ticker_snapshot as get_uw_snapshot
 from threat_intel import check_indicator
 from community_intel import check_hn_discussion
-from archive import log_ioc_hit, log_notable
+from archive import log_ioc_hit, log_notable, log_rule_update
 
 DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 INTERACTIVE_CHANNEL_ID = int(os.environ["INTERACTIVE_CHANNEL_ID"])
@@ -42,6 +42,7 @@ interactive_channel = None  # populated on_ready
 
 
 DISCORD_TIMESTAMP_RE = re.compile(r"<t:(\d+):[a-zA-Z]>")
+_RULE_DIFF_RE = re.compile(r"diff --git a/(\S+\.(?:yml|yaml|yar|yara)) b/\S+")
 
 
 def _replace_discord_timestamp(match: re.Match) -> str:
@@ -322,6 +323,11 @@ async def handle_watched_post(message: discord.Message):
     if context:
         prompt += f"\n\n{context}"
     print(f"[news-watch] #{message.channel.name}: {text[:150]!r}", flush=True)
+
+    rule_match = _RULE_DIFF_RE.search(text)
+    if rule_match:
+        asyncio.create_task(log_rule_update(message.author.name, rule_match.group(1), text))
+
     await run_discussion([], prompt, interactive_channel, passive_note=NEWS_NOTE, should_escalate=True)
 
 

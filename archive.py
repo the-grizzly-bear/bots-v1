@@ -56,3 +56,26 @@ async def log_notable(tier: str, summary: str, message_link: str | None = None) 
         "source": message_link,
     }
     await _append_and_push("notable", record, f"{tier} item")
+
+
+def _safe_slug(text: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_." else "_" for c in text)[:80]
+
+
+async def log_rule_update(source_name: str, rule_path: str, diff_content: str) -> None:
+    """Rule bodies (Sigma/YARA/etc diffs) get their own file per event, not
+    a JSONL log - these are meant to be read/reused directly, not just
+    logged as a record."""
+    async with _write_lock:
+        try:
+            stamp = time.strftime("%Y-%m-%d_%H%M%S")
+            filename = f"{stamp}_{_safe_slug(source_name)}_{_safe_slug(rule_path)}.diff"
+            path = REPO_DIR / "rules" / filename
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(diff_content, encoding="utf-8")
+            rel_path = path.relative_to(REPO_DIR)
+            _git("add", str(rel_path))
+            _git("commit", "-m", f"Rule update: {source_name} - {rule_path}")
+            _git("push", "origin", "main")
+        except Exception as e:
+            print(f"[archive] failed to write/push rule: {e!r}", flush=True)
