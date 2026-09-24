@@ -14,6 +14,7 @@ from poster import post_to_webhook
 from memory import remember, recent_context, seconds_since_last_ping, record_ping
 from web_fetch import fetch_url_content
 from market_data import get_ticker_context
+from fred_client import get_fred_series
 from uw_client import ticker_snapshot as get_uw_snapshot
 from threat_intel import check_indicator
 from community_intel import check_hn_discussion
@@ -192,6 +193,35 @@ UW_TOOL = {
 }
 
 
+FRED_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_fred_series",
+        "description": (
+            "Look up a real macro/economic data series from FRED (Federal "
+            "Reserve Economic Data) - CPI, unemployment rate, Fed funds "
+            "rate, GDP, treasury yields, etc. Use this for anything touching "
+            "Fed policy, inflation, or broad economic conditions instead of "
+            "relying on training data, which goes stale fast for this kind "
+            "of thing. Takes either an exact FRED series id (e.g. "
+            "'CPIAUCSL', 'UNRATE', 'FEDFUNDS') or a plain-language query "
+            "(e.g. 'unemployment rate') - it'll resolve a query to the best "
+            "matching series automatically."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "A FRED series id, or a plain-language description of the economic data wanted.",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+
 THREAT_INTEL_TOOL = {
     "type": "function",
     "function": {
@@ -270,6 +300,11 @@ async def execute_tool(name: str, args: dict) -> str:
         if not ticker:
             return "No ticker given."
         return await get_uw_snapshot(ticker)
+    if name == "get_fred_series":
+        query = str(args.get("query", "")).strip()
+        if not query:
+            return "No series or query given."
+        return await get_fred_series(query)
     if name == "check_threat_indicator":
         indicator = str(args.get("indicator", "")).strip()
         if not indicator:
@@ -798,7 +833,11 @@ OTHER_PERSONAS_NOTE = (
     "research post instead of taking the claim at face value. You also have "
     "a check_hn_discussion tool that checks whether a URL or topic has real "
     "Hacker News community engagement - use it to gauge whether the tech "
-    "community actually cares about something, separate from threat data."
+    "community actually cares about something, separate from threat data. "
+    "You also have a get_fred_series tool for real macro/economic data "
+    "(CPI, unemployment, Fed funds rate, GDP, yields) - use it for anything "
+    "touching Fed policy or economic conditions instead of relying on "
+    "training data, which is stale for this."
 )
 
 
@@ -844,7 +883,7 @@ async def get_reply(persona_key: str, prompt: str):
             reply = await chat(
                 system_prompt_for(persona_key),
                 prompt,
-                tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL, TICKER_TOOL, UW_TOOL, THREAT_INTEL_TOOL, HN_DISCUSSION_TOOL],
+                tools=[READ_CHANNEL_TOOL, FETCH_URL_TOOL, TICKER_TOOL, UW_TOOL, THREAT_INTEL_TOOL, HN_DISCUSSION_TOOL, FRED_TOOL],
                 tool_executor=execute_tool,
             )
             print(f"[chat] got reply: {reply!r}", flush=True)
