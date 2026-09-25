@@ -83,6 +83,25 @@ def find_mentioned_personas(text: str, exclude: set):
     return found
 
 
+async def resolve_reply_persona(message: discord.Message) -> str | None:
+    """A Discord reply is just as much 'addressing someone' as typing their
+    name is - replying to Athena's message with 'that wasn't a hoax' (no
+    name in the text at all) was silently treated as unaddressed passive
+    chatter, since find_mentioned_personas only reads the message text and
+    never looks at the reply relationship. Resolves the replied-to
+    message's author back to a persona key so a reply gets a real targeted
+    response, same as naming them would."""
+    if not message.reference:
+        return None
+    try:
+        ref_message = message.reference.resolved
+        if not isinstance(ref_message, discord.Message):
+            ref_message = await message.channel.fetch_message(message.reference.message_id)
+    except (discord.NotFound, discord.HTTPException):
+        return None
+    return NAME_TO_KEY.get(ref_message.author.name.lower())
+
+
 async def fetch_channel_context(channel: discord.TextChannel) -> str:
     lines = []
     async for msg in channel.history(limit=CHANNEL_HISTORY_LIMIT):
@@ -414,6 +433,9 @@ async def on_message(message: discord.Message):
     # anyone named ANYWHERE in the message (not just at the start) is forced
     # to respond - covers "ditto: x", "hi meowth", "what does mew think", etc.
     forced_keys = find_mentioned_personas(content, exclude=set())
+    reply_key = await resolve_reply_persona(message)
+    if reply_key and reply_key not in forced_keys:
+        forced_keys.append(reply_key)
     await run_discussion(forced_keys, content, interactive_channel)
 
 
