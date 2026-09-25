@@ -455,9 +455,18 @@ REACT_NOTE = (
     "each other's replies yet. Now that you can see the full picture, do you "
     "actually agree? If you genuinely disagree with someone, or want to build "
     "on a specific point they made, say so in your own voice - name them if "
-    f"you're responding to something specific they said. If you have nothing "
-    f"real to add, reply with exactly the single word {PASS_WORD} - don't "
-    "force a reaction just to react."
+    "you're responding to something specific they said.\n\n"
+    "These are people you actually know, not strangers to stay polite with - "
+    "if someone's take is genuinely weak, say so plainly, in whatever way "
+    "fits your own voice (Marcus would mock it outright; Heraclitus would "
+    "call out the assumption behind it; Diogenes wouldn't bother hiding his "
+    "boredom with it). If someone actually nailed something, real praise is "
+    "just as valid a reaction as disagreement - don't default to neutral "
+    "acknowledgment when you genuinely think they were right or wrong. Flat "
+    "agreement or vague validation isn't a real reaction either way - if "
+    "your honest read is 'yeah, fair', that's usually a PASS, not a reply.\n\n"
+    f"If you have nothing real to add, reply with exactly the single word "
+    f"{PASS_WORD} - don't force a reaction just to react."
 )
 
 
