@@ -890,6 +890,27 @@ def _is_non_latin_letter(ch: str) -> bool:
     return ch.isalpha() and not _LATIN_LETTER_RE.match(ch)
 
 
+_FAKE_PARENTHETICAL_TOOL_CALL_RE = re.compile(
+    r"\(\s*[a-z_]+\(\s*[\"'][^\"')]+[\"']\s*\)\s*\)", re.IGNORECASE
+)
+
+
+def _has_fake_tool_call(text: str) -> bool:
+    """The existing JSON-shaped and <tool_call>-tag fake-call stripping in
+    clean_reply() didn't catch this variant: the model writing out
+    '(fetch_url("https://..."))' as literal text, then fabricating a tool
+    result to go with it. Caught live in production - a persona faked
+    fetching a URL, invented a result that flatly contradicted the REAL
+    fetch_url data already sitting in the same transcript, used that
+    fabrication to wrongly overrule another persona, and that false claim
+    ("verified false on fetch") went out in a real escalation ping to the
+    user. Unlike the other degeneration patterns, this one isn't safe to
+    just strip cosmetically - if the model faked the tool call, its
+    conclusion is built on invented evidence, so the whole reply needs to
+    be discarded and retried, not lightly cleaned up."""
+    return bool(_FAKE_PARENTHETICAL_TOOL_CALL_RE.search(text))
+
+
 def _is_mostly_non_english(text: str) -> bool:
     """Prompt-level 'always reply in English' isn't 100% reliable - qwen2.5
     occasionally drifts into Chinese (or other scripts) with no content
@@ -926,6 +947,11 @@ async def get_reply(persona_key: str, prompt: str):
             print(f"[chat] got reply: {reply!r}", flush=True)
             if reply and _is_mostly_non_english(reply):
                 print(f"[chat] {persona_key} replied in a non-English script, retrying" if attempt == 0 else f"[chat] {persona_key} still non-English after retry, dropping", flush=True)
+                if attempt == 0:
+                    continue
+                return None
+            if reply and _has_fake_tool_call(reply):
+                print(f"[chat] {persona_key} faked a tool call, retrying" if attempt == 0 else f"[chat] {persona_key} still faking a tool call after retry, dropping", flush=True)
                 if attempt == 0:
                     continue
                 return None
