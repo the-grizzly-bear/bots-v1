@@ -977,7 +977,14 @@ OTHER_PERSONAS_NOTE = (
     "You also have a get_fred_series tool for real macro/economic data "
     "(CPI, unemployment, Fed funds rate, GDP, yields) - use it for anything "
     "touching Fed policy or economic conditions instead of relying on "
-    "training data, which is stale for this."
+    "training data, which is stale for this.\n\n"
+    "A real call to any of these tools goes out as an actual structured "
+    "call, never as text in your reply - don't write out a tool's name "
+    "with parens/quotes/a URL after it, and don't write out what its "
+    "result would look like. This still applies after a real call already "
+    "came back with a good result: fold that result into your own "
+    "sentence and stop there, don't also cite or repeat the call itself "
+    "as text afterward."
 )
 
 

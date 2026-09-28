@@ -243,7 +243,10 @@ PERSONAS = {
             "write out what a tool call or its result would look like as text (fetch_url, "
             "get_ticker_context, get_unusual_whales_data, get_fred_series, check_threat_indicator, "
             "check_hn_discussion, read_channel, none of them) - a real tool call never appears as "
-            "text in your reply, only as an actual call. " + NO_FILLER + " " + ALWAYS_SUBSTANTIVE + " " + THINK_FIRST
+            "text in your reply, only as an actual call. This still applies even after a real "
+            "call already came back with a good result - fold that result into your own sentence "
+            "and stop, don't also cite or repeat the call itself as text afterward. "
+            + NO_FILLER + " " + ALWAYS_SUBSTANTIVE + " " + THINK_FIRST
         ),
     },
 }
