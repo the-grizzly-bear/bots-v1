@@ -451,6 +451,7 @@ async def handle_watched_post(message: discord.Message):
     # feeds with no lane mapping) discusses in #general-news-chat - keeps
     # CVE debates from getting buried under flood warnings and vice versa.
     destination = cyber_channel if lane_keys is not None else general_channel
+    print(f"[route-debug] source=#{message.channel.name} lane_keys={lane_keys} -> destination={destination.name if destination else None} ({destination.id if destination else None})", flush=True)
     await run_discussion([], prompt, destination, passive_note=NEWS_NOTE, should_escalate=True, source_link=message.jump_url, lane_keys=lane_keys)
 
 
