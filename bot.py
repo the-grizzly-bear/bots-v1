@@ -283,7 +283,14 @@ THREAT_INTEL_TOOL = {
             "the actual services this data comes from, on the user's own "
             "registered access. Use this to verify whether an indicator "
             "from an IOC dump or research post is a real, currently known "
-            "threat instead of taking the claim at face value."
+            "threat instead of taking the claim at face value. Do NOT call "
+            "this on a documentation placeholder used as a generic "
+            "illustration in an advisory's own writing - example.com, "
+            "example.org, example.net, test.com, private/reserved ranges "
+            "(192.168.x.x, 10.x.x.x, 127.0.0.1), or any indicator whose "
+            "surrounding text literally says 'e.g.' or 'such as'. Those "
+            "aren't real IOCs and checking them wastes a call and produces "
+            "a meaningless result."
         ),
         "parameters": {
             "type": "object",
