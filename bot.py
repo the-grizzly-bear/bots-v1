@@ -813,7 +813,22 @@ async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextCha
             print(f"[escalate] floor rule: stack keyword + active-exploit language in raw item, "
                   f"raising {tier!r} -> {_ESCALATION_FLOOR_TIER}", flush=True)
             tier = _ESCALATION_FLOOR_TIER
-            verdict = f"{tier}: Stack-relevant active-exploitation language found directly in the item text."
+            # Keep the classifier's own reason if it gave one (it may well
+            # have correctly identified WHAT this is, just under-tiered it)
+            # instead of discarding it for a boilerplate line that names
+            # neither the product nor the CVE - caught live going out as
+            # just 'Stack-relevant active-exploitation language found
+            # directly in the item text.' with zero specifics, on an item
+            # where the verdict text before the floor rule fired was bare.
+            original_reason = verdict.split(":", 1)[1].strip() if ":" in verdict else ""
+            if not original_reason:
+                keyword_match = _STACK_KEYWORD_RE.search(raw_item)
+                keyword = keyword_match.group(0) if keyword_match else "the user's stack"
+                original_reason = (
+                    f"Active-exploitation language found directly alongside a mention of "
+                    f"{keyword} in the item text - see the item for details."
+                )
+            verdict = f"{tier}: {original_reason}"
             judged_by_claude = None  # forced by the deterministic floor rule, not a model verdict
 
         if tier not in ESCALATION_TIERS:
