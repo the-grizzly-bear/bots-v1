@@ -203,7 +203,12 @@ async def _fetch_url_uncached(url: str) -> str:
             else:
                 return f"Too many redirects fetching {url}."
     except Exception as e:
-        return f"Error fetching {url}: {e}"
+        # httpx.ReadTimeout (and some other exception types) carry no
+        # message text at all - str(e) is just '', producing a silently
+        # blank "Error fetching {url}: " that tells the persona nothing
+        # about what actually went wrong. Fall back to the exception's
+        # class name so there's always something to react to.
+        return f"Error fetching {url}: {str(e) or type(e).__name__}"
 
     if content_type.startswith("image/"):
         return await _describe_image(body, url)
