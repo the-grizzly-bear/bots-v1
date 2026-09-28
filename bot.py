@@ -26,6 +26,22 @@ DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 INTERACTIVE_CHANNEL_ID = int(os.environ["INTERACTIVE_CHANNEL_ID"])
 CYBER_CHANNEL_ID = int(os.environ["CYBER_CHANNEL_ID"])
 GENERAL_CHANNEL_ID = int(os.environ["GENERAL_CHANNEL_ID"])
+WEBHOOK_CYBER = os.environ["WEBHOOK_CYBER"]
+WEBHOOK_GENERAL = os.environ["WEBHOOK_GENERAL"]
+
+
+def webhook_for(channel_id: int) -> str:
+    """Webhooks are bound to whatever channel they were created in, unlike
+    the discord.TextChannel object passed around as 'typing_channel' - so
+    posting to the right channel means picking the right webhook, not just
+    passing a different channel object. Falls back to the original shared
+    interactive-channel webhook (any WEBHOOK_PERSONA_* works, they're all
+    the same webhook) for anything that isn't the new split channels."""
+    if channel_id == CYBER_CHANNEL_ID:
+        return WEBHOOK_CYBER
+    if channel_id == GENERAL_CHANNEL_ID:
+        return WEBHOOK_GENERAL
+    return os.environ.get("WEBHOOK_PERSONA_ANALYST")
 WATCHED_CHANNEL_NAMES = {
     c.strip().lower() for c in os.environ.get("WATCHED_CHANNELS", "").split(",") if c.strip()
 }
@@ -629,7 +645,7 @@ async def maybe_synthesize(transcript_lines: list, typing_channel: discord.TextC
     if is_pass(reply):
         print("[synthesize] nothing to wrap up", flush=True)
         return
-    webhook_url = os.environ.get("WEBHOOK_PERSONA_ANALYST")  # shared webhook, any key works
+    webhook_url = webhook_for(typing_channel.id)
     try:
         await post_to_webhook(webhook_url, reply, SAGE_NAME, SAGE_AVATAR_URL)
     except Exception as e:
@@ -830,7 +846,7 @@ async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextCha
             # mouth with a tacked-on "(Claude)" tag - that read like a log
             # annotation bolted onto a bot post, not like Claude actually
             # saying something.
-            webhook_url = os.environ.get(PERSONAS[ESCALATION_PERSONA_KEY]["webhook_env"])
+            webhook_url = webhook_for(typing_channel.id)
             ok = False
             if webhook_url:
                 try:
@@ -842,7 +858,7 @@ async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextCha
         else:
             # Ollama fallback or the deterministic floor rule - not
             # actually Claude's judgment, so don't post it as Claude.
-            ok = await post_reply(ESCALATION_PERSONA_KEY, ping_text)
+            ok = await post_reply(ESCALATION_PERSONA_KEY, ping_text, typing_channel.id)
         if ok:
             record_ping(tier)
         else:
@@ -881,7 +897,7 @@ async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord
                     continue
                 filler_seen = True
             spoken.add(key)
-            replies.append(reply if await post_reply(key, reply) else None)
+            replies.append(reply if await post_reply(key, reply, typing_channel.id) else None)
 
     transcript_lines = [f"User: {prompt}"]
     queue = []
@@ -904,7 +920,7 @@ async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord
         for key, reaction in zip(reactors, raw_reactions):
             if is_pass(reaction):
                 continue
-            if not await post_reply(key, reaction):
+            if not await post_reply(key, reaction, typing_channel.id):
                 continue
             transcript_lines.append(f"{PERSONAS[key]['name']}: {reaction}")
             for mentioned_key in find_mentioned_personas(reaction, exclude=spoken):
@@ -926,7 +942,7 @@ async def run_discussion(forced_keys: list, prompt: str, typing_channel: discord
         reply = await get_reply(persona_key, transcript)
         if is_pass(reply):
             continue
-        if not await post_reply(persona_key, reply):
+        if not await post_reply(persona_key, reply, typing_channel.id):
             continue
 
         transcript_lines.append(f"{PERSONAS[persona_key]['name']}: {reply}")
@@ -1348,11 +1364,11 @@ def clean_reply(reply: str, own_name: str = None) -> str:
     return "\n".join(kept).strip()
 
 
-async def post_reply(persona_key: str, reply: str):
+async def post_reply(persona_key: str, reply: str, channel_id: int = INTERACTIVE_CHANNEL_ID):
     persona = PERSONAS[persona_key]
-    webhook_url = os.environ.get(persona["webhook_env"])
+    webhook_url = webhook_for(channel_id)
     if not webhook_url:
-        print(f"[skip] no webhook set for {persona['webhook_env']}", flush=True)
+        print(f"[skip] no webhook set for channel {channel_id}", flush=True)
         return False
 
     try:
@@ -1369,7 +1385,7 @@ async def respond_as(persona_key: str, prompt: str, typing_channel: discord.Text
         reply = await get_reply(persona_key, prompt)
     if reply is None:
         return None
-    ok = await post_reply(persona_key, reply)
+    ok = await post_reply(persona_key, reply, typing_channel.id)
     return reply if ok else None
 
 
