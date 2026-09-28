@@ -1133,16 +1133,24 @@ def _has_fake_tool_call(text: str) -> bool:
 
 
 # Diogenes's system prompt has a HARD RULE against 'Another'/'Yet another'
-# appearing anywhere in his reply - prompt-only, and caught live going out
-# anyway ('Another day, another predictable panic.'), unlike the fake-tool-
-# call checks above which back their prompt instruction with an actual
-# runtime check. Giving this the same treatment: a real check with
-# discard-and-retry, not just an instruction the model can silently ignore.
-_ANOTHER_RE = re.compile(r"\b(?:another|yet another)\b", re.IGNORECASE)
+# appearing anywhere in his reply - prompt-only at first, then backed with a
+# real runtime check after 'Another day, another predictable panic.' got
+# caught live going out anyway. That anywhere-in-the-reply version turned
+# out too broad: 'another' is also just load-bearing vocabulary for a
+# 'seen this pattern repeat' cynic ('worth another cycle of CVE-of-the-day
+# noise' is an actual jab, not filler), so banning it everywhere pushed his
+# silent-drop rate past 40% live, discarding decent replies along with the
+# genuinely lazy ones. Narrowed back to just the OPENING word, which is
+# where it actually reads as a templated non-reaction and was already
+# empirically proven to work (43% -> ~4% residual in earlier testing).
+_ANOTHER_OPENER_RE = re.compile(r"^(?:another|yet another)\b", re.IGNORECASE)
 
 
 def _has_another_violation(persona_key: str, text: str) -> bool:
-    return persona_key == "cynic" and bool(_ANOTHER_RE.search(text))
+    if persona_key != "cynic":
+        return False
+    head = re.sub(r"^[\s*_>\"']+", "", text)
+    return bool(_ANOTHER_OPENER_RE.match(head))
 
 
 # Sophia's banned-opener list ('The assumption here is', 'The assumption is
