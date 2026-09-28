@@ -1145,6 +1145,26 @@ def _has_another_violation(persona_key: str, text: str) -> bool:
     return persona_key == "cynic" and bool(_ANOTHER_RE.search(text))
 
 
+# Sophia's banned-opener list ('The assumption here is', 'The assumption is
+# that', 'This assumes', etc.) is also prompt-only with no runtime backstop -
+# caught live going out anyway with a shape not even on that list ('The
+# assumption that centralization alone ensures reliability is worth
+# questioning.'). Matching on the opening words rather than the literal
+# banned phrases catches this and any similar variant without needing to
+# enumerate every possible wording.
+_ASSUMPTION_OPENER_RE = re.compile(
+    r"^(?:the assumption\b|this assumes\b|it'?s assumed that\b|there'?s an assumption\b)",
+    re.IGNORECASE,
+)
+
+
+def _has_assumption_opener_violation(persona_key: str, text: str) -> bool:
+    if persona_key != "philosopher":
+        return False
+    head = re.sub(r"^[\s*_>\"']+", "", text)
+    return bool(_ASSUMPTION_OPENER_RE.match(head))
+
+
 def _strip_leading_non_latin_token(reply: str) -> str:
     """A single garbled non-Latin token glued onto the front of an
     otherwise-fine English reply (e.g. 'Александреску, that means...').
@@ -1245,6 +1265,11 @@ async def get_reply(persona_key: str, prompt: str):
                 return None
             if reply and _has_another_violation(persona_key, reply):
                 print(f"[chat] {persona_key} used 'Another', retrying" if attempt == 0 else f"[chat] {persona_key} still using 'Another' after retry, dropping", flush=True)
+                if attempt == 0:
+                    continue
+                return None
+            if reply and _has_assumption_opener_violation(persona_key, reply):
+                print(f"[chat] {persona_key} used an assumption-opener, retrying" if attempt == 0 else f"[chat] {persona_key} still using an assumption-opener after retry, dropping", flush=True)
                 if attempt == 0:
                     continue
                 return None
