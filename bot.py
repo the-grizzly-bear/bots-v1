@@ -1039,17 +1039,33 @@ _FAKE_NAMED_TOOL_CALL_RE = re.compile(
     # Sixth shape caught live: 'CallCheck_hn_discussion\n{"query": ...}' -
     # a glued-on prefix ("Call") with no separator broke the leading \b
     # boundary, AND a bare JSON object with no wrapping parens/quotes at
-    # all broke the trailing punctuation requirement. Chasing each new
-    # wrapping/gluing variant individually isn't sustainable - dropped
-    # both the leading \b and the trailing punctuation requirement
-    # entirely. These are multi-word compound technical identifiers that
-    # essentially never occur in genuine conversational prose, so matching
-    # the bare name anywhere is safe and catches any future wrapping style
-    # without needing another patch.
+    # all broke the trailing punctuation requirement. Dropped both the
+    # leading \b and the trailing punctuation requirement.
+    #
+    # That made the bare name enough to match anywhere - which turned out
+    # NOT to be safe once personas started naming their own tools in
+    # ordinary prose ('...without further investigation using
+    # check_threat_indicator.', 'The get_unusual_whales_data tool could
+    # provide deeper context here.') - both real, legitimate replies,
+    # both discarded and retried for nothing. Every real fake-call shape
+    # caught live has the name sitting directly against a call-shaped
+    # character right after it - '(', a quote, '{', or ':' - while a
+    # plain-English mention is always followed by more sentence (a space
+    # then a word, or a period). Requiring that adjacency keeps every
+    # documented shape above matching while letting the name appear on
+    # its own in a sentence.
+    #
+    # Seventh shape caught live: 'fetch_url http://fxtwitter.com/...' - a
+    # bare, unquoted URL argument with just a space, no punctuation at all
+    # right after the name. The adjacency rule above misses this (a space
+    # then a letter looks identical to plain prose), so bare
+    # http(s):// right after the name is a second, separate trigger -
+    # still a real tool call shape, still never legitimate prose (nobody
+    # writes "the fetch_url http://..." as a sentence).
     r"(?:" + "|".join(
         "[_ ]".join(re.escape(part) for part in n.split("_"))
         for n in _KNOWN_TOOL_NAMES
-    ) + r")",
+    ) + r")\s*(?:[(\"'{:]|https?://)",
     re.IGNORECASE,
 )
 
