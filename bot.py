@@ -1132,6 +1132,19 @@ def _has_fake_tool_call(text: str) -> bool:
     )
 
 
+# Diogenes's system prompt has a HARD RULE against 'Another'/'Yet another'
+# appearing anywhere in his reply - prompt-only, and caught live going out
+# anyway ('Another day, another predictable panic.'), unlike the fake-tool-
+# call checks above which back their prompt instruction with an actual
+# runtime check. Giving this the same treatment: a real check with
+# discard-and-retry, not just an instruction the model can silently ignore.
+_ANOTHER_RE = re.compile(r"\b(?:another|yet another)\b", re.IGNORECASE)
+
+
+def _has_another_violation(persona_key: str, text: str) -> bool:
+    return persona_key == "cynic" and bool(_ANOTHER_RE.search(text))
+
+
 def _strip_leading_non_latin_token(reply: str) -> str:
     """A single garbled non-Latin token glued onto the front of an
     otherwise-fine English reply (e.g. 'Александреску, that means...').
@@ -1227,6 +1240,11 @@ async def get_reply(persona_key: str, prompt: str):
                 return None
             if reply and _has_fake_tool_call(reply):
                 print(f"[chat] {persona_key} faked a tool call, retrying" if attempt == 0 else f"[chat] {persona_key} still faking a tool call after retry, dropping", flush=True)
+                if attempt == 0:
+                    continue
+                return None
+            if reply and _has_another_violation(persona_key, reply):
+                print(f"[chat] {persona_key} used 'Another', retrying" if attempt == 0 else f"[chat] {persona_key} still using 'Another' after retry, dropping", flush=True)
                 if attempt == 0:
                     continue
                 return None
