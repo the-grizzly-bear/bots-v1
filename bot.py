@@ -24,6 +24,8 @@ from raw_archive import log_raw_post, flush_loop as raw_archive_flush_loop
 
 DISCORD_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 INTERACTIVE_CHANNEL_ID = int(os.environ["INTERACTIVE_CHANNEL_ID"])
+CYBER_CHANNEL_ID = int(os.environ["CYBER_CHANNEL_ID"])
+GENERAL_CHANNEL_ID = int(os.environ["GENERAL_CHANNEL_ID"])
 WATCHED_CHANNEL_NAMES = {
     c.strip().lower() for c in os.environ.get("WATCHED_CHANNELS", "").split(",") if c.strip()
 }
@@ -42,6 +44,8 @@ CHANNEL_HISTORY_LIMIT = 15
 channel_name_to_obj = {}  # populated on_ready: 'unu_other' -> discord.TextChannel
 watched_channel_ids = set()  # populated on_ready
 interactive_channel = None  # populated on_ready
+cyber_channel = None  # populated on_ready - auto-reactions for cyber-lane source channels
+general_channel = None  # populated on_ready - auto-reactions for everything else
 
 # Ablation-tested (2026-09-25/26) domain routing - going from 4 to 11
 # watched channels made the full 7-persona panel on every single item
@@ -392,13 +396,15 @@ def resolve_channel_mentions(message: discord.Message) -> str:
 
 @client.event
 async def on_ready():
-    global interactive_channel
+    global interactive_channel, cyber_channel, general_channel
     for guild in client.guilds:
         for ch in guild.text_channels:
             channel_name_to_obj[ch.name.lower()] = ch
             if ch.name.lower() in WATCHED_CHANNEL_NAMES:
                 watched_channel_ids.add(ch.id)
     interactive_channel = client.get_channel(INTERACTIVE_CHANNEL_ID)
+    cyber_channel = client.get_channel(CYBER_CHANNEL_ID)
+    general_channel = client.get_channel(GENERAL_CHANNEL_ID)
     asyncio.create_task(raw_archive_flush_loop())
     print(f"Logged in as {client.user} (bots-v1), watching channel {INTERACTIVE_CHANNEL_ID}, "
           f"can read {len(channel_name_to_obj)} channels, monitoring "
@@ -424,7 +430,12 @@ async def handle_watched_post(message: discord.Message):
         asyncio.create_task(log_rule_update(message.author.name, rule_match.group(1), text))
 
     lane_keys = CHANNEL_PERSONA_LANES.get(message.channel.name.lower())
-    await run_discussion([], prompt, interactive_channel, passive_note=NEWS_NOTE, should_escalate=True, source_link=message.jump_url, lane_keys=lane_keys)
+    # cyber-lane source channels (the ones with a persona-lane mapping)
+    # discuss in #cyber-intel-chat; everything else (general news/finance
+    # feeds with no lane mapping) discusses in #general-news-chat - keeps
+    # CVE debates from getting buried under flood warnings and vice versa.
+    destination = cyber_channel if lane_keys is not None else general_channel
+    await run_discussion([], prompt, destination, passive_note=NEWS_NOTE, should_escalate=True, source_link=message.jump_url, lane_keys=lane_keys)
 
 
 @client.event
