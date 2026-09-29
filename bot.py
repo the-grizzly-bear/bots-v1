@@ -807,6 +807,20 @@ async def maybe_escalate(transcript_lines: list, typing_channel: discord.TextCha
         verdict = (verdict or "").strip()
         tier = verdict.split(":", 1)[0].strip().upper()
 
+        # The local Ollama fallback (only used when the Claude overseer
+        # itself failed) is measurably worse at respecting CRITICAL's
+        # actual bar - caught live rating a routine regional flood watch
+        # CRITICAL, a tier meant only for an active exploit against the
+        # user's own stack or a rare global emergency. CRITICAL is the
+        # most disruptive ping there is, so cap the fallback one notch
+        # below it rather than trust a weaker local model with the
+        # rarest, highest-stakes tier.
+        if not judged_by_claude and tier == "CRITICAL":
+            print("[escalate] ollama fallback rated CRITICAL, capping to HIGH "
+                  "(local model isn't trusted with the top tier)", flush=True)
+            tier = "HIGH"
+            verdict = f"{tier}:{verdict.split(':', 1)[1]}" if ":" in verdict else f"{tier}: {verdict}"
+
         raw_item = transcript_lines[0] if transcript_lines else ""
         floor_hit = bool(_STACK_KEYWORD_RE.search(raw_item)) and _has_unnegated_match(_ACTIVE_EXPLOIT_RE, raw_item)
         if floor_hit and _TIER_RANK.get(tier, 0) < _TIER_RANK[_ESCALATION_FLOOR_TIER]:
