@@ -13,14 +13,23 @@ genuinely severe items, and reliably follows the "output ONLY the final
 tier line" instruction once the prompt asked for it explicitly."""
 
 import asyncio
+import os
 
 CONTAINER_NAME = "claude-discord-bridge"
 TIMEOUT = 120
 
 
 async def claude_oneshot(system_prompt: str, user_message: str) -> str:
-    cmd = [
-        "docker", "exec", CONTAINER_NAME,
+    cmd = ["docker", "exec"]
+    # The container's own interactive OAuth session can expire (it did,
+    # ~2026-09-29 01:16) and docker exec doesn't source a login shell, so
+    # the container's persistent env is never enough on its own - pass a
+    # long-lived setup-token explicitly on every call instead.
+    oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    if oauth_token:
+        cmd += ["-e", f"CLAUDE_CODE_OAUTH_TOKEN={oauth_token}"]
+    cmd += [
+        CONTAINER_NAME,
         "claude", "-p", user_message,
         "--append-system-prompt", system_prompt,
         "--dangerously-skip-permissions",
