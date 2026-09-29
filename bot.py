@@ -1403,6 +1403,20 @@ def clean_reply(reply: str, own_name: str = None) -> str:
     # strip a real word that happens to open a real sentence.
     if re.fullmatch(r"[A-Za-z]*[a-z][A-Z][A-Za-z]*", reply.strip()):
         reply = ""
+    # Caught live: a reply opening with one or more full ALL-CAPS sentences
+    # (a shouted-sounding internal note like 'FETCHED TEXT WAS STILL NOT
+    # USEFUL, SO CLEARLY THE WEAK CLAIM IS...') glued onto an otherwise
+    # normal-case reply that makes the same point calmly right after. The
+    # point itself is usually fine, just duplicated in a jarring shouted
+    # register first - strip the shouted lead-in rather than discard a
+    # reply whose actual content is fine. Anchored to full sentences (ending
+    # in .!? before the case switches) so a short real acronym opener like
+    # 'CVE-2026-12345 is critical' can't match - there's no lowercase
+    # transition inside the caps run itself.
+    reply = re.sub(
+        r'^(?:[A-Z0-9][A-Z0-9 ,\'".\-]{4,}?[.!?]\s*)+(?=[A-Z][a-z]|")',
+        "", reply,
+    )
     reply = re.sub(r"\n{2,}", "\n", reply).strip()
     reply = re.sub(r"^[\s*_]*\bPASS\b[\s*_.:]*", "", reply, flags=re.IGNORECASE)
     reply = re.sub(r"[\s*_.:]*\bPASS\b[\s*_.:]*$", "", reply, flags=re.IGNORECASE)
