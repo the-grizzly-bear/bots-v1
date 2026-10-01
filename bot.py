@@ -1231,6 +1231,19 @@ def _has_nothing_to_react_filler(text: str) -> bool:
     return bool(_NOTHING_TO_REACT_RE.search(text))
 
 
+def _is_all_caps(text: str) -> bool:
+    """Caught live from Thersites: a WHOLE reply shouted in ALL CAPS, not
+    just a leading shouted block glued onto otherwise-normal text (that case
+    is already handled by the strip in clean_reply(), commit 995789a - but
+    that regex requires a lowercase transition right after the caps run to
+    anchor on, which never appears here since nothing in the reply ever
+    drops to lowercase). Requires a reasonable number of letters so a short
+    legitimate all-caps acronym/ticker on its own ('AMD', a CVE ID) can't
+    trip it - this is about an entire multi-word reply, not a single term."""
+    letters = re.sub(r"[^A-Za-z]", "", text)
+    return len(letters) >= 20 and letters.isupper()
+
+
 def _has_assumption_opener_violation(persona_key: str, text: str) -> bool:
     if persona_key != "philosopher":
         return False
@@ -1348,6 +1361,11 @@ async def get_reply(persona_key: str, prompt: str):
                 return None
             if reply and _has_nothing_to_react_filler(reply):
                 print(f"[chat] {persona_key} used 'nothing to react to' filler, retrying" if attempt == 0 else f"[chat] {persona_key} still using 'nothing to react to' filler after retry, dropping", flush=True)
+                if attempt == 0:
+                    continue
+                return None
+            if reply and _is_all_caps(reply):
+                print(f"[chat] {persona_key} shouted the whole reply in caps, retrying" if attempt == 0 else f"[chat] {persona_key} still shouting in caps after retry, dropping", flush=True)
                 if attempt == 0:
                     continue
                 return None
