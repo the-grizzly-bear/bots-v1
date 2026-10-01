@@ -53,6 +53,8 @@ _OG_KEYS = ("og:title", "twitter:title", "og:description", "twitter:description"
 # leads like "sourceMapping:" prefixing an otherwise real reply.
 _JS_MARKERS_RE = re.compile(r"sourceMappingURL|\bfunction\s*\(|\bwindow\.\w+\s*=|\bvar\s+\w+\s*=")
 
+WAYBACK_AVAILABILITY_URL = "https://archive.org/wayback/available"
+
 
 def _decode_entities(text: str) -> str:
     for entity, char in _ENTITIES.items():
@@ -164,6 +166,35 @@ async def fetch_url_content(url: str) -> str:
         _in_flight.pop(url, None)
 
 
+async def _try_wayback(url: str) -> str | None:
+    """Falls back to the Wayback Machine's most recent snapshot when a direct
+    fetch fails (401/403/paywall, most common failure personas kept hitting
+    and just bailing on with 'can't see it, passing'). An archived copy was
+    often captured before a paywall's JS kicked in, or by a crawler with
+    different access than ours - returns None on any failure so the caller
+    can fall back to the original error."""
+    try:
+        async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
+            resp = await client.get(WAYBACK_AVAILABILITY_URL, params={"url": url})
+            resp.raise_for_status()
+            snapshot = resp.json().get("archived_snapshots", {}).get("closest", {})
+            snapshot_url = snapshot.get("url")
+            if not snapshot_url:
+                return None
+            archive_resp = await client.get(snapshot_url, headers={"User-Agent": "bots-v1/1.0"})
+            archive_resp.raise_for_status()
+            if "html" not in archive_resp.headers.get("content-type", ""):
+                return None
+            text = _html_to_text(archive_resp.text)
+            if not text.strip():
+                return None
+            if len(text) > MAX_CONTENT_CHARS:
+                text = text[:MAX_CONTENT_CHARS] + "\n...[truncated]"
+            return text
+    except Exception:
+        return None
+
+
 async def _fetch_url_uncached(url: str) -> str:
     """Fetch a URL directly and return its readable text, truncated. No
     search engine, no JS rendering, no browser session - just reads the
@@ -203,6 +234,9 @@ async def _fetch_url_uncached(url: str) -> str:
             else:
                 return f"Too many redirects fetching {url}."
     except Exception as e:
+        archived = await _try_wayback(url)
+        if archived:
+            return archived
         # httpx.ReadTimeout (and some other exception types) carry no
         # message text at all - str(e) is just '', producing a silently
         # blank "Error fetching {url}: " that tells the persona nothing
