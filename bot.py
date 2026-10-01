@@ -1221,8 +1221,18 @@ _ASSUMPTION_OPENER_RE = re.compile(
 # close paraphrase of the literal banned example. Prompt-only text didn't
 # stop it, same as the cynic/philosopher bans above - this applies to every
 # persona since NO_FILLER is shared, not just the one caught so far.
+#
+# Caught live again from Thersites: "There's no substantive information here
+# to react to" - a different adjective than 'significant' dodging the
+# literal match. A bare 'no' alternative would catch the broader pattern but
+# also false-positives on completely unrelated sentences where a real 'No,'
+# happens to precede real content ending in 'to react to' 60 chars later
+# ("No, that is clearly wrong, but there is plenty to react to here") -
+# anchoring 'no' to a short list of adjectives that actually show up in this
+# hedge (substantive/real/actual/specific/concrete/new) catches the
+# paraphrase without that false positive.
 _NOTHING_TO_REACT_RE = re.compile(
-    r"\b(nothing|not much|no significant|little)\b[^.?!]{0,60}\bto react to\b",
+    r"\b(nothing|not much|no (?:significant|substantive|real|actual|specific|concrete|new)|little)\b[^.?!]{0,60}\bto react to\b",
     re.IGNORECASE,
 )
 
