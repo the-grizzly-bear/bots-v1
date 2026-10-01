@@ -38,6 +38,19 @@ async def post_to_webhook(webhook_url: str, content: str, username: str, avatar_
                     retry_after = resp.json().get("retry_after", 1)
                     await asyncio.sleep(retry_after)
                     continue
+                # Caught live: a handful of real 5xx responses from Discord's
+                # own webhook endpoint (503 Service Unavailable) during a
+                # brief incident on their side - these are transient like the
+                # 429 case above, but previously weren't retried at all, so a
+                # persona's reply was silently dropped for something that a
+                # short backoff would likely have recovered from.
+                if resp.status_code >= 500:
+                    last_error = httpx.HTTPStatusError(
+                        f"Server error '{resp.status_code}' for url '{webhook_url}'",
+                        request=resp.request, response=resp,
+                    )
+                    await asyncio.sleep(2)
+                    continue
                 resp.raise_for_status()
                 return
         except httpx.TimeoutException as e:
