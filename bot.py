@@ -1465,8 +1465,21 @@ def clean_reply(reply: str, own_name: str = None) -> str:
     # token is never real prose (real words don't run together without
     # spaces), so once the camel signature is found, eat any trailing
     # non-whitespace run too, not just a specific punctuation character.
+    #
+    # False positive caught live: "SoftBank's massive investment in OpenAI
+    # is either..." lost "SoftBank's " entirely, leaving a subjectless
+    # sentence - SoftBank has the exact same lowercase-then-uppercase
+    # transition ('t'->'B') the pattern was built to catch. Every real
+    # garbled case documented above (sourceMapping, iNdEx) starts with a
+    # LOWERCASE letter; real CamelCase brand/compound names that show up in
+    # news content (SoftBank, OpenAI, PayPal, FedEx) are proper nouns and
+    # start uppercase. Anchoring the leading run to lowercase-only keeps
+    # every documented garbled case matching while excluding this whole
+    # class of real brand names - the remaining gap (a lowercase-first
+    # brand like iPhone/eBay) is rarer in this feed than the false
+    # positive this was causing on every SoftBank mention.
     reply = re.sub(
-        r"^\s*[A-Za-z]*[a-z][A-Z][A-Za-z]*(?:[:,;]\s*(?:-?\d+\s*)?|\S*\s*)",
+        r"^\s*[a-z]+[A-Z][A-Za-z]*(?:[:,;]\s*(?:-?\d+\s*)?|\S*\s*)",
         "", reply,
     )
     # Same tell, but sometimes the ENTIRE reply is just the bare garbled
