@@ -1141,6 +1141,25 @@ _FAKE_NAMED_TOOL_CALL_RE = re.compile(
 )
 
 
+# Eighth shape caught live: 'Fetch_url on the Telegram link: https://t.me/Walter'
+# - tool name announced in plain prose with real sentence structure between
+# it and the URL, so neither the adjacency rule above nor a bare-URL-right-
+# after-the-name check matches. Worse than a cosmetic fake-call: the URL
+# itself was fabricated (not present anywhere in the actual source item -
+# "Walter" is just the news feed's name, guessed into a plausible-looking
+# t.me link), and the persona's next reply reported invented fetch results
+# about an unrelated real Telegram profile that domain happened to resolve
+# to. Narrowed to the tool name sitting at the very start of the reply
+# (real prose mentioning a tool conversationally doesn't open a sentence
+# with the tool's name like a command) with a raw URL somewhere later in
+# the same line - doesn't touch a tool name appearing mid-sentence.
+_FAKE_TOOL_ANNOUNCEMENT_RE = re.compile(
+    r"^[\s*_>\"']*(?:" + "|".join(re.escape(n) for n in _KNOWN_TOOL_NAMES) + r")\b"
+    r"[^\n]{0,80}https?://",
+    re.IGNORECASE,
+)
+
+
 def _has_fake_tool_call(text: str) -> bool:
     """The existing JSON-shaped and <tool_call>-tag fake-call stripping in
     clean_reply() didn't catch this variant: the model writing out
@@ -1158,6 +1177,7 @@ def _has_fake_tool_call(text: str) -> bool:
         _FAKE_PARENTHETICAL_TOOL_CALL_RE.search(text)
         or _FAKE_JSON_ARG_TOOL_CALL_RE.search(text)
         or _FAKE_NAMED_TOOL_CALL_RE.search(text)
+        or _FAKE_TOOL_ANNOUNCEMENT_RE.search(text)
     )
 
 
