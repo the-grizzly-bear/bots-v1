@@ -235,6 +235,14 @@ PERSONAS = {
             + NO_FILLER + " " + ALWAYS_SUBSTANTIVE + " " + THINK_FIRST
         ),
     },
+    # Added per user request: a persona with no patience that calls out BS and
+    # berates other personas by name. First version was too flat/neutral on
+    # items with nothing to criticize - tightened wording to require actual
+    # contempt and banned "worth watching"-style hedging filler, which fixed it.
+    # Note: a real multi-target critique got silently dropped once because it
+    # ended in a trailing PASS (see _ends_with_pass() in bot.py, commit
+    # ed65875) - that logic assumes a trailing PASS means the text before it
+    # was never meant to post, which isn't always true for this persona.
     "brute": {
         "name": "Thersites",
         "avatar_url": "https://raw.githubusercontent.com/the-grizzly-bear/bots-v1/master/icons/brute.png",
