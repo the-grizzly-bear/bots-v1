@@ -1195,6 +1195,22 @@ _ASSUMPTION_OPENER_RE = re.compile(
 )
 
 
+# NO_FILLER (shared by every persona) explicitly spells out 'nothing to
+# react to yet' as the exact generic stock phrase to never reach for - caught
+# live anyway from Lydia ('no significant moves or news to react to'), a
+# close paraphrase of the literal banned example. Prompt-only text didn't
+# stop it, same as the cynic/philosopher bans above - this applies to every
+# persona since NO_FILLER is shared, not just the one caught so far.
+_NOTHING_TO_REACT_RE = re.compile(
+    r"\b(nothing|not much|no significant|little)\b[^.?!]{0,60}\bto react to\b",
+    re.IGNORECASE,
+)
+
+
+def _has_nothing_to_react_filler(text: str) -> bool:
+    return bool(_NOTHING_TO_REACT_RE.search(text))
+
+
 def _has_assumption_opener_violation(persona_key: str, text: str) -> bool:
     if persona_key != "philosopher":
         return False
@@ -1307,6 +1323,11 @@ async def get_reply(persona_key: str, prompt: str):
                 return None
             if reply and _has_assumption_opener_violation(persona_key, reply):
                 print(f"[chat] {persona_key} used an assumption-opener, retrying" if attempt == 0 else f"[chat] {persona_key} still using an assumption-opener after retry, dropping", flush=True)
+                if attempt == 0:
+                    continue
+                return None
+            if reply and _has_nothing_to_react_filler(reply):
+                print(f"[chat] {persona_key} used 'nothing to react to' filler, retrying" if attempt == 0 else f"[chat] {persona_key} still using 'nothing to react to' filler after retry, dropping", flush=True)
                 if attempt == 0:
                     continue
                 return None
