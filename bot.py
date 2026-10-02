@@ -1241,6 +1241,45 @@ def _has_nothing_to_react_filler(text: str) -> bool:
     return bool(_NOTHING_TO_REACT_RE.search(text))
 
 
+# Thersites's system prompt has a prompt-only HARD RULE against
+# 'react'/'reaction'/'reacting' appearing anywhere in his reply - caught live
+# going out anyway ("Not much point in reacting to something we can't
+# actually read, is there?"), same unreliable-prompt-only pattern as every
+# other ban in this file before it got a runtime backstop. Word-boundary
+# match on the three forms, not a phrase match, since the live case used a
+# different sentence shape than the original 'nothing to react to' violation
+# this persona is also checked for.
+_REACT_WORD_RE = re.compile(r"\breact(?:ion|ing)?\b", re.IGNORECASE)
+
+
+def _has_react_word_violation(persona_key: str, text: str) -> bool:
+    if persona_key != "brute":
+        return False
+    return bool(_REACT_WORD_RE.search(text))
+
+
+# Thersites's system prompt bans a specific list of bored-analyst hedging
+# phrases ('worth watching', 'worth keeping an eye on', 'could be a
+# significant boost', 'worth monitoring') as prompt-only text - caught live
+# going out anyway twice ("it's worth watching", "it's important to monitor
+# further movements"), same gap as the react/reaction ban above. Matched as a
+# phrase list rather than single banned words since these are all multi-word
+# hedges with no single word that's unsafe to ban outright (e.g. 'watching'
+# alone is normal vocabulary elsewhere in a reply).
+_BORED_ANALYST_FILLER_RE = re.compile(
+    r"\bworth (?:watching|keeping an eye on|monitoring)\b"
+    r"|\bcould be a significant boost\b"
+    r"|\bimportant to (?:monitor|keep an eye on|watch)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_bored_analyst_filler(persona_key: str, text: str) -> bool:
+    if persona_key != "brute":
+        return False
+    return bool(_BORED_ANALYST_FILLER_RE.search(text))
+
+
 def _is_all_caps(text: str) -> bool:
     """Caught live from Thersites: a WHOLE reply shouted in ALL CAPS, not
     just a leading shouted block glued onto otherwise-normal text (that case
@@ -1376,6 +1415,16 @@ async def get_reply(persona_key: str, prompt: str):
                 return None
             if reply and _is_all_caps(reply):
                 print(f"[chat] {persona_key} shouted the whole reply in caps, retrying" if attempt == 0 else f"[chat] {persona_key} still shouting in caps after retry, dropping", flush=True)
+                if attempt == 0:
+                    continue
+                return None
+            if reply and _has_react_word_violation(persona_key, reply):
+                print(f"[chat] {persona_key} used 'react/reaction/reacting', retrying" if attempt == 0 else f"[chat] {persona_key} still using 'react/reaction/reacting' after retry, dropping", flush=True)
+                if attempt == 0:
+                    continue
+                return None
+            if reply and _has_bored_analyst_filler(persona_key, reply):
+                print(f"[chat] {persona_key} used bored-analyst filler, retrying" if attempt == 0 else f"[chat] {persona_key} still using bored-analyst filler after retry, dropping", flush=True)
                 if attempt == 0:
                     continue
                 return None
