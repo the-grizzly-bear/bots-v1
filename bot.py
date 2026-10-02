@@ -1270,10 +1270,17 @@ def _has_react_word_violation(persona_key: str, text: str) -> bool:
 # phrase list rather than single banned words since these are all multi-word
 # hedges with no single word that's unsafe to ban outright (e.g. 'watching'
 # alone is normal vocabulary elsewhere in a reply).
+#
+# First version required 'worth'/'important to' immediately before
+# 'keeping an eye on'/'monitor'/'watch' - missed a bare "but keeping an eye
+# on any future implications" with neither lead-in. 'keep(ing) an eye on' is
+# unambiguously this hedge on its own (unlike 'watching'/'monitor' alone,
+# which are normal vocabulary), so it's now matched standalone too.
 _BORED_ANALYST_FILLER_RE = re.compile(
     r"\bworth (?:watching|keeping an eye on|monitoring)\b"
     r"|\bcould be a significant boost\b"
-    r"|\bimportant to (?:monitor|keep an eye on|watch)\b",
+    r"|\bimportant to (?:monitor|keep an eye on|watch)\b"
+    r"|\bkeep(?:ing)? an eye on\b",
     re.IGNORECASE,
 )
 
