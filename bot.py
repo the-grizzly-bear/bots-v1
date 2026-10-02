@@ -1249,7 +1249,11 @@ def _has_nothing_to_react_filler(text: str) -> bool:
 # match on the three forms, not a phrase match, since the live case used a
 # different sentence shape than the original 'nothing to react to' violation
 # this persona is also checked for.
-_REACT_WORD_RE = re.compile(r"\breact(?:ion|ing)?\b", re.IGNORECASE)
+#
+# First version (`react(?:ion|ing)?\b`) missed the plural - caught live within
+# minutes of shipping ("beyond surface-level reactions"), since \b right after
+# 'ion' doesn't match when an 's' comes before the next real boundary.
+_REACT_WORD_RE = re.compile(r"\breact(?:ions?|ing)?\b", re.IGNORECASE)
 
 
 def _has_react_word_violation(persona_key: str, text: str) -> bool:
