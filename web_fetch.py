@@ -55,6 +55,21 @@ _JS_MARKERS_RE = re.compile(r"sourceMappingURL|\bfunction\s*\(|\bwindow\.\w+\s*=
 
 WAYBACK_AVAILABILITY_URL = "https://archive.org/wayback/available"
 
+# msrc.microsoft.com/update-guide pages are a pure client-side React SPA -
+# the server sends nothing but <noscript>You need to enable JavaScript to
+# run this app.</noscript> and no OpenGraph meta tags at all, so every
+# single fetch of one of these (effectively every MSRC link in the vulns
+# feed) came back content-free. Caught live: a persona treated that stub as
+# "the link is broken" and dismissed a real CVE on that false premise. MSRC
+# exposes the same data the React app renders through this public,
+# unauthenticated JSON API - no login, no key - so route these URLs there
+# instead of trying to scrape HTML that was never going to have content.
+_MSRC_CVE_RE = re.compile(
+    r"^https?://msrc\.microsoft\.com/update-guide/vulnerability/(CVE-\d{4}-\d+)",
+    re.IGNORECASE,
+)
+MSRC_API_URL = "https://api.msrc.microsoft.com/sug/v2.0/en-US/vulnerability/{}"
+
 
 def _decode_entities(text: str) -> str:
     for entity, char in _ENTITIES.items():
@@ -166,6 +181,41 @@ async def fetch_url_content(url: str) -> str:
         _in_flight.pop(url, None)
 
 
+async def _fetch_msrc_vulnerability(cve_id: str) -> str | None:
+    try:
+        async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
+            resp = await client.get(
+                MSRC_API_URL.format(cve_id), headers={"User-Agent": "bots-v1/1.0"}
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception:
+        return None
+    title = data.get("cveTitle")
+    if not title:
+        return None
+    description = _TAG_RE.sub(" ", data.get("description") or "").strip()
+    # Fields vary by issuing CNA - e.g. a Chromium-origin CVE ingested by
+    # Edge has no severity/impact/CVSS of its own, only Microsoft-authored
+    # ones do - so build the summary from whatever's actually present
+    # instead of printing "unknown" for half of every reply.
+    facts = []
+    if data.get("severity"):
+        facts.append(f"Severity: {data['severity']}")
+    if data.get("impact"):
+        facts.append(f"Impact: {data['impact']}")
+    if data.get("baseScore"):
+        facts.append(f"CVSS: {data['baseScore']}")
+    if data.get("exploited"):
+        facts.append(f"Exploited: {data['exploited']}")
+    lines = [f"{data.get('cveNumber', cve_id)}: {title}"]
+    if description:
+        lines.append(description)
+    if facts:
+        lines.append(" | ".join(facts))
+    return "\n".join(lines)
+
+
 async def _try_wayback(url: str) -> str | None:
     """Falls back to the Wayback Machine's most recent snapshot when a direct
     fetch fails (401/403/paywall, most common failure personas kept hitting
@@ -205,6 +255,14 @@ async def _fetch_url_uncached(url: str) -> str:
     Redirects are followed manually (not via httpx's follow_redirects) so
     every hop gets the same internal-address check as the original URL -
     otherwise a safe-looking link could 302 straight into an SSRF."""
+    msrc_match = _MSRC_CVE_RE.match(url)
+    if msrc_match:
+        msrc_text = await _fetch_msrc_vulnerability(msrc_match.group(1))
+        if msrc_text:
+            return msrc_text
+        # fall through to the generic fetch below only if the API itself
+        # failed (network blip, CVE not yet in their system, etc.)
+
     ok, reason = _is_safe_url(url)
     if not ok:
         return reason
